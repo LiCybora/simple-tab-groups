@@ -32,10 +32,6 @@ const {
 
 const startUpDataPromise = sendMessage('get-startup-data');
 
-await Containers.init();
-
-const getContainers = () => Containers.query({defaultContainer: true, temporaryContainer: true});
-
 export default {
     data() {
         self.app = this;
@@ -54,7 +50,7 @@ export default {
             currentWindow: null,
             openedWindows: [],
 
-            containers: getContainers(),
+            containers: {},
 
             search: '',
             searchDelay: '',
@@ -116,6 +112,7 @@ export default {
     created() {
         window.$vm = this;
         instances.add(this);
+        this.containers = this.getContainers();
     },
     beforeDestroy() {
         instances.delete(this);
@@ -138,10 +135,7 @@ export default {
         groupTabsCountMessage: Groups.tabsCountMessage,
 
         tabGroupsSetupListeners() {
-            this.$on('containers-updated', () => {
-                this.containers = getContainers();
-                this.allTabsArray.forEach(this.mapTabContainer, this);
-            });
+            const offChangedContainers = Containers.onChanged(() => this.onChangedContainers());
 
             this.$on('window-closed', () => this.loadWindows());
 
@@ -201,6 +195,17 @@ export default {
             this.$on('lock-addon', () => {
                 this.isLoading = true;
                 disconnect();
+                offChangedContainers();
+            });
+        },
+        onChangedContainers() {
+            this.containers = this.getContainers();
+            this.allTabsArray.forEach(this.mapTabContainer, this);
+        },
+        getContainers() {
+            return Containers.query({
+                defaultContainer: true,
+                temporaryContainer: true,
             });
         },
 

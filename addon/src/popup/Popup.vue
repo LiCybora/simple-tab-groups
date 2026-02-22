@@ -85,7 +85,7 @@ export default {
         'context-menu-group': contextMenuGroup,
     },
     async mounted() {
-        const log = logger.start('mounted');
+        const log = window.logger.start('mounted');
 
         await Promise.all([
             this.optionsLoadPromise,

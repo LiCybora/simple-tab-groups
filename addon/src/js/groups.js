@@ -43,6 +43,20 @@ const DEPENDENT_KEYS_FOR_EXTERNAL_EXTENSIONS = new Set([
     'newTabContainer',
 ]);
 
+Containers.onChanged(async () => {
+    if (!mainStorage.inited) {
+        return;
+    }
+
+    const log = logger.start('Containers.onChanged listener');
+    const {groups} = await load();
+
+    if (normalizeContainersInGroups(groups)) {
+        await save(groups);
+    }
+    log.stop();
+});
+
 // if set return {group, groups, groupIndex}
 export async function load(groupId = null, withTabs = false, includeFavIconUrl, includeThumbnail) {
     const log = logger.start('load', groupId, {withTabs, includeFavIconUrl, includeThumbnail});
@@ -688,7 +702,7 @@ export function normalizeContainersInGroups(groups) {
 
     let hasChanges = false;
 
-    groups.forEach(group => {
+    for (const group of groups) {
         const oldNewTabContainer = group.newTabContainer,
             oldCatchTabContainersLength = group.catchTabContainers.length,
             oldExcludeContainersForReOpenLength = group.excludeContainersForReOpen.length;
@@ -715,7 +729,7 @@ export function normalizeContainersInGroups(groups) {
                 });
             }
         }
-    });
+    };
 
     return hasChanges;
 }

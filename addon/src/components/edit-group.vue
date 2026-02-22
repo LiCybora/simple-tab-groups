@@ -57,7 +57,7 @@ export default {
         return {
             show: false,
 
-            containers: Containers.query({}),
+            containers: Containers.query(),
 
             disabledContainers: {},
 
@@ -152,6 +152,8 @@ export default {
             return !group.isArchive;
         });
 
+        this.offChangedContainers = Containers.onChanged(() => this.containers = Containers.query());
+
         if (!this.isDefaultGroup) {
             for (const cookieStoreId of [Constants.DEFAULT_COOKIE_STORE_ID, ...Object.keys(this.containers)]) {
                 for (const group of groups) {
@@ -176,6 +178,9 @@ export default {
         this.show = true;
 
         this.setFocus();
+    },
+    beforeDestroy() {
+        this.offChangedContainers();
     },
     methods: {
         lang: Lang,

@@ -42,7 +42,7 @@ import Notification from '/js/notification.js?add-listeners';
 import JSON from '/js/json.js';
 import BatchProcessor from '/js/batch-processor.js';
 import Lang from '/js/lang.js';
-import * as Containers from '/js/containers.js';
+import * as Containers from '/js/containers.js?add-listeners';
 import * as Storage from '/js/storage.js';
 import * as Cache from '/js/cache.js';
 import * as File from '/js/file.js';
@@ -3636,9 +3636,6 @@ async function init() {
         let data = await Storage.getForMigrate();
 
         const dataChanged = new Set;
-
-        await Containers.init(data.temporaryContainerTitle);
-        log.log('containers inited');
 
         const resultMigrate = await runMigrateForData(data);
 

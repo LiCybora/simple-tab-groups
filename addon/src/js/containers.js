@@ -6,93 +6,109 @@ import Listeners from './listeners.js\
 ';
 import * as Constants from './constants.js';
 import * as ConstantsBrowser from './constants-browser.js';
-import Logger, {catchFunc} from './logger.js';
+import Logger from './logger.js';
 import Notification from './notification.js';
-import Lang from '/js/lang.js';
-import * as Utils from './utils.js';
-import * as Groups from './groups.js';
+import Lang from './lang.js';
+import * as containersBroadcast from './broadcast.js?channel=containers';
 import * as Storage from './storage.js';
-import * as Messages from './messages.js';
 
 const logger = new Logger('Containers');
-const mainStorage = localStorage.create(Constants.MODULES.BACKGROUND);
-
-const containers = {};
 
 export const DEFAULT = {
     cookieStoreId: Constants.DEFAULT_COOKIE_STORE_ID,
     name: Lang('noContainerTitle'),
 };
-
-export const TEMPORARY = {
-    color: 'toolbar',
-    colorCode: false,
-    cookieStoreId: Constants.TEMPORARY_CONTAINER,
-    icon: Constants.TEMPORARY_CONTAINER_ICON,
-    iconUrl: ConstantsBrowser.getContainerIconUrl(Constants.TEMPORARY_CONTAINER_ICON),
-    name: Lang('temporaryContainerTitle'),
+const TEMPORARY_SUFIX = '\u229E\u200D\u23F3'; // ⊞ + glue + ⏳
+const SHARED_KEY = Symbol.for('__ext_containers_shared_state__');
+const shared = self[SHARED_KEY] ??= {
+    containers: await load(),
+    onChangedListeners: new Set(),
+    TEMPORARY: {
+        color: 'toolbar',
+        colorCode: false,
+        cookieStoreId: Constants.TEMPORARY_CONTAINER,
+        icon: Constants.TEMPORARY_CONTAINER_ICON,
+        iconUrl: ConstantsBrowser.getContainerIconUrl(Constants.TEMPORARY_CONTAINER_ICON),
+        name: await Storage.get('temporaryContainerTitle')
+            .then(data => data.temporaryContainerTitle || Promise.reject(new Error('is empty')))
+            .catch(e => {
+                logger.logError("can't get temporaryContainerTitle from storage", e);
+                return Lang('temporaryContainerTitle');
+            }),
+    },
 };
 
-const tmpUniq = Utils.getRandomInt();
+export const TEMPORARY = shared.TEMPORARY;
+const containers = shared.containers;
+const onChangedListeners = shared.onChangedListeners;
+const searchParams = new URL(import.meta.url).searchParams;
 
-if (Constants.IS_BACKGROUND_PAGE) {
+if (searchParams.has('add-listeners')) {
     addListeners();
+} else {
+    containersBroadcast.on('updated', ({data}) => {
+        if (data.temporaryContainerTitle) {
+            TEMPORARY.name = data.temporaryContainerTitle;
+            logger.log('temporaryContainerTitle updated from broadcast');
+        }
+
+        if (data.containers) {
+            Object.keys(containers).forEach(cookieStoreId => delete containers[cookieStoreId]);
+            Object.assign(containers, data.containers);
+            logger.log('containers updated from broadcast');
+            processOnChangedListeners();
+        }
+    });
 }
 
-function addListeners(options) {
-    Listeners.contextualIdentities.onCreated.add(catchFunc(onCreated, logger), options);
-    Listeners.contextualIdentities.onUpdated.add(catchFunc(onUpdated, logger), options);
-    Listeners.contextualIdentities.onRemoved.add(catchFunc(onRemoved, logger), options);
+function broadcastUpdate(data) {
+    containersBroadcast.send({action: 'updated', data}, {includeSelf: false});
 }
 
-function removeListeners() {
-    Listeners.contextualIdentities.onCreated.clear();
-    Listeners.contextualIdentities.onUpdated.clear();
-    Listeners.contextualIdentities.onRemoved.clear();
+function addListeners() {
+    Listeners.contextualIdentities.onCreated.add(onCreated);
+    Listeners.contextualIdentities.onUpdated.add(onUpdated);
+    Listeners.contextualIdentities.onRemoved.add(onRemoved);
 }
 
-export async function init() {
-    const log = logger.start('init');
-
-    const {temporaryContainerTitle} = await Storage.get('temporaryContainerTitle')
-        .catch(log.onCatch("can't get storage"));
-
-    setTemporaryContainerTitle(temporaryContainerTitle);
-
-    await load();
-
-    log.stop();
+export function removeListeners() {
+    Listeners.contextualIdentities.onCreated.remove(onCreated);
+    Listeners.contextualIdentities.onUpdated.remove(onUpdated);
+    Listeners.contextualIdentities.onRemoved.remove(onRemoved);
 }
 
-export async function load(containersStorage = containers) {
-    const log = logger.start('load');
+async function load() {
+    const log = logger.start(load);
 
-    const loadedContainers = await browser.contextualIdentities.query({})
-        .catch(log.onCatch('cant load containers'));
+    let result = {};
 
-    for (const cookieStoreId in containersStorage) {
-        delete containersStorage[cookieStoreId];
+    try {
+        const containersArray = await browser.contextualIdentities.query({});
+        result = Object.fromEntries(containersArray.map(container => [container.cookieStoreId, container]));
+        log.stop();
+    } catch (e) {
+        log.logError("can't load containers", e).stopError();
     }
 
-    log.stop();
-    return Utils.arrayToObj(loadedContainers, 'cookieStoreId', containersStorage);
+    return result;
 }
 
 function onCreated({contextualIdentity}) {
     containers[contextualIdentity.cookieStoreId] = contextualIdentity;
 
-    if (contextualIdentity.name === (TEMPORARY.name + tmpUniq)) {
+    if (contextualIdentity.name === TEMPORARY.name + TEMPORARY_SUFIX) {
         return;
     }
 
-    Messages.sendMessageFromBackground('containers-updated');
+    broadcastUpdate({containers});
+    processOnChangedListeners();
 }
 
 function onUpdated({contextualIdentity}) {
     const {cookieStoreId} = contextualIdentity;
-    const isOldContainerNameAreTmp = containers[cookieStoreId].name === (TEMPORARY.name + tmpUniq);
+    const isOldNameWasIntermediate = containers[cookieStoreId].name === TEMPORARY.name + TEMPORARY_SUFIX;
 
-    if (!isOldContainerNameAreTmp && containers[cookieStoreId].name !== contextualIdentity.name) {
+    if (!isOldNameWasIntermediate && containers[cookieStoreId].name !== contextualIdentity.name) {
         if (isTemporary(cookieStoreId) && !isTemporary(null, contextualIdentity)) {
             Notification(['thisContainerIsNotTemporary', contextualIdentity.name]);
         } else if (!isTemporary(cookieStoreId) && isTemporary(null, contextualIdentity)) {
@@ -102,144 +118,109 @@ function onUpdated({contextualIdentity}) {
 
     containers[cookieStoreId] = contextualIdentity;
 
-    if (isOldContainerNameAreTmp) {
+    if (isOldNameWasIntermediate) {
         return;
     }
 
-    Messages.sendMessageFromBackground('containers-updated');
+    broadcastUpdate({containers});
+    processOnChangedListeners();
 }
 
 async function onRemoved({contextualIdentity}) {
-    const log = logger.start('onRemoved', contextualIdentity);
-
-    const isTemporaryContainer = isTemporary(contextualIdentity.cookieStoreId, contextualIdentity);
-
     delete containers[contextualIdentity.cookieStoreId];
 
-    if (isTemporaryContainer) {
-        log.stop('isTemporaryContainer');
+    if (isTemporary(contextualIdentity.cookieStoreId, contextualIdentity)) {
         return;
     }
 
-    if (!mainStorage.inited) {
-        log.stopError('background not inited');
-        return;
-    }
-
-    const {groups} = await Groups.load();
-    const needSaveGroups = Groups.normalizeContainersInGroups(groups);
-
-    if (needSaveGroups) {
-        await Groups.save(groups);
-    }
-
-    Messages.sendMessageFromBackground('containers-updated');
-    log.stop();
+    broadcastUpdate({containers});
+    processOnChangedListeners();
 }
 
+export function onChanged(listener) {
+    onChangedListeners.add(listener);
+    return () => onChangedListeners.delete(listener);
+}
+
+function processOnChangedListeners() {
+    for (const listener of onChangedListeners) {
+        try {
+            listener();
+        } catch (e) {
+            logger.logError(['onChangedListener:', listener.name], e);
+        }
+    }
+}
 
 export function isDefault(cookieStoreId) {
     return !cookieStoreId || DEFAULT.cookieStoreId === cookieStoreId || cookieStoreId.includes('default');
 }
 
-export function isTemporary(cookieStoreId, contextualIdentity = null, containersStorage = containers) {
+export function isTemporary(cookieStoreId, contextualIdentity = containers[cookieStoreId]) {
     if (cookieStoreId === TEMPORARY.cookieStoreId) {
         return true;
     }
 
-    contextualIdentity ??= containersStorage[cookieStoreId];
-
-    if (!contextualIdentity) {
-        return false;
-    }
-
-    return contextualIdentity.name === getTemporaryContainerName(contextualIdentity.cookieStoreId);
+    return contextualIdentity?.name === createTemporaryName(contextualIdentity?.cookieStoreId);
 }
 
-const containerIdRegExp = /\d+$/;
-function getTemporaryContainerName(cookieStoreId) {
-    const [containerId] = containerIdRegExp.exec(cookieStoreId);
-    return TEMPORARY.name + ' ' + containerId;
-}
-
-export async function createTemporaryContainer(containersStorage = containers) {
-    const log = logger.start('createTemporaryContainer');
+export async function createTemporary() {
+    const log = logger.start(createTemporary);
 
     const {cookieStoreId} = await create({
-        name: TEMPORARY.name + tmpUniq,
+        name: TEMPORARY.name + TEMPORARY_SUFIX,
         color: TEMPORARY.color,
         icon: TEMPORARY.icon,
-    }, containersStorage).catch(log.onCatch("can't create"));
+    }).catch(log.onCatch("can't create"));
 
-    await update(cookieStoreId, {
-        name: getTemporaryContainerName(cookieStoreId),
-    }, containersStorage).catch(log.onCatch("can't update"));
+    const contextualIdentity = await update(cookieStoreId, {
+        name: createTemporaryName(cookieStoreId),
+    }).catch(log.onCatch("can't update"));
+
+    broadcastUpdate({containers});
 
     log.stop(cookieStoreId);
 
-    return cookieStoreId;
-}
-
-export async function update(cookieStoreId, details, containersStorage = containers) {
-    const log = logger.start('update', cookieStoreId, details);
-
-    Object.assign(containersStorage[cookieStoreId], details);
-
-    const contextualIdentity = await browser.contextualIdentities.update(cookieStoreId, details)
-        .catch(log.onCatch("can't update"));
-
-    containersStorage[cookieStoreId] = contextualIdentity;
-
-    log.stop();
-
     return contextualIdentity;
 }
 
-export async function remove(cookieStoreIds, containersStorage = containers) {
-    const log = logger.start('remove', cookieStoreIds);
+async function create(details) {
+    const contextualIdentity = await browser.contextualIdentities.create(details);
+    containers[contextualIdentity.cookieStoreId] = contextualIdentity;
+    return contextualIdentity;
+}
 
-    for (const cookieStoreId of [cookieStoreIds].flat()) {
-        try {
-            await browser.contextualIdentities.remove(cookieStoreId);
-            delete containersStorage[cookieStoreId];
-        } catch (e) {
-            log.logError("can't remove", e);
-        }
+async function update(cookieStoreId, details) {
+    Object.assign(containers[cookieStoreId], details); // TODO check if need
+    const contextualIdentity = await browser.contextualIdentities.update(cookieStoreId, details);
+    containers[cookieStoreId] = contextualIdentity;
+    return contextualIdentity;
+}
+
+async function remove(cookieStoreIds) {
+    for (const cookieStoreId of cookieStoreIds) {
+        await browser.contextualIdentities.remove(cookieStoreId);
+        delete containers[cookieStoreId];
     }
-
-    log.stop();
 }
 
-export async function create(details, containersStorage = containers) {
-    const log = logger.start('create', details);
-
-    const contextualIdentity = await browser.contextualIdentities.create(details)
-        .catch(log.onCatch("can't create"));
-
-    containersStorage[contextualIdentity.cookieStoreId] = contextualIdentity;
-
-    log.stop();
-
-    return contextualIdentity;
-}
-
-export async function findExistOrCreateSimilar(cookieStoreId, containerData = null, storageMap = new Map, containersStorage = containers) {
+export async function findExistOrCreateSimilar(cookieStoreId, containerData = null, storageMap = new Map) {
     if (isDefault(cookieStoreId)) {
         return DEFAULT.cookieStoreId;
     }
 
-    if (containersStorage[cookieStoreId]) {
+    if (containers[cookieStoreId]) {
         return cookieStoreId;
     }
 
     if (!storageMap.has(cookieStoreId)) {
         if (containerData) {
-            for (const csId in containersStorage) {
+            for (const csId in containers) {
                 if (
-                    !isTemporary(csId, undefined, containersStorage) &&
-                    containerData.name === containersStorage[csId].name &&
-                    containerData.color === containersStorage[csId].color &&
-                    containerData.icon === containersStorage[csId].icon
+                    !isTemporary(csId) &&
+                    containerData.name === containers[csId].name &&
+                    containerData.color === containers[csId].color &&
+                    containerData.icon === containers[csId].icon
                 ) {
                     storageMap.set(cookieStoreId, csId);
                     break;
@@ -251,30 +232,31 @@ export async function findExistOrCreateSimilar(cookieStoreId, containerData = nu
                     name: containerData.name,
                     color: containerData.color,
                     icon: containerData.icon,
-                }, containersStorage);
+                });
                 storageMap.set(cookieStoreId, csId);
+                broadcastUpdate({containers});
             }
         } else {
-            storageMap.set(cookieStoreId, await createTemporaryContainer(containersStorage));
+            storageMap.set(cookieStoreId, await createTemporary());
         }
     }
 
     return storageMap.get(cookieStoreId);
 }
 
-export function get(cookieStoreId, containersStorage = containers) {
-    if (containersStorage[cookieStoreId]) {
-        return {...containersStorage[cookieStoreId]};
+export function get(cookieStoreId) {
+    if (containers[cookieStoreId]) {
+        return {...containers[cookieStoreId]};
     } else if (isDefault(cookieStoreId)) {
         return {...DEFAULT};
-    } else if (isTemporary(cookieStoreId, undefined, containersStorage)) {
+    } else if (isTemporary(cookieStoreId)) {
         return {...TEMPORARY};
     }
 
     return null;
 }
 
-export function query(params = {}, containersStorage = containers) {
+export function query(params = {}) {
     params.defaultContainer ??= false;
     params.temporaryContainers ??= false;
     params.temporaryContainer ??= false;
@@ -286,12 +268,9 @@ export function query(params = {}, containersStorage = containers) {
         result[DEFAULT.cookieStoreId] = {...DEFAULT};
     }
 
-    for (const cookieStoreId in containersStorage) {
-        if (
-            params.temporaryContainers ||
-            !isTemporary(cookieStoreId, undefined, containersStorage)
-        ) {
-            result[cookieStoreId] = {...containersStorage[cookieStoreId]};
+    for (const cookieStoreId in containers) {
+        if (params.temporaryContainers || !isTemporary(cookieStoreId)) {
+            result[cookieStoreId] = {...containers[cookieStoreId]};
         }
     }
 
@@ -303,7 +282,7 @@ export function query(params = {}, containersStorage = containers) {
     return result;
 }
 
-export function getToExport(storageData, containersStorage = containers) {
+export function getToExport(storageData) {
     const containersToExport = new Set;
 
     for (const group of storageData.groups) {
@@ -314,7 +293,7 @@ export function getToExport(storageData, containersStorage = containers) {
     }
 
     for (const cookieStoreId of containersToExport) {
-        if (isDefault(cookieStoreId) || isTemporary(cookieStoreId, undefined, containersStorage)) {
+        if (isDefault(cookieStoreId) || isTemporary(cookieStoreId)) {
             containersToExport.delete(cookieStoreId);
         }
     }
@@ -322,7 +301,7 @@ export function getToExport(storageData, containersStorage = containers) {
     const result = {};
 
     for (const cookieStoreId of containersToExport) {
-        result[cookieStoreId] = {...containersStorage[cookieStoreId]};
+        result[cookieStoreId] = {...containers[cookieStoreId]};
     }
 
     return result;
@@ -363,58 +342,55 @@ export function mapDefaultContainer(storageData, defaultCookieStoreId) {
     normalize(storageData.defaultGroupProps);
 }
 
-export async function removeUnusedTemporaryContainers(tabs, containersStorage = containers) {
-    const log = logger.start('removeUnusedTemporaryContainers');
+export async function removeUnusedTemporaryContainers(tabs) {
+    const log = logger.start(removeUnusedTemporaryContainers);
 
     const tabContainers = new Set(tabs.map(tab => tab.cookieStoreId));
 
-    const tempContainersToRemove = Object.keys(containersStorage)
-        .filter(cookieStoreId => isTemporary(cookieStoreId, null, containersStorage) && !tabContainers.has(cookieStoreId));
+    const tempContainersToRemove = Object.keys(containers)
+        .filter(cookieStoreId => isTemporary(cookieStoreId) && !tabContainers.has(cookieStoreId));
 
-    if (!tempContainersToRemove.length) {
-        log.stop('not found');
-        return;
+    await remove(tempContainersToRemove).catch(log.onCatch("can't remove"));
+
+    broadcastUpdate({containers});
+
+    log.stop('removed count:', tempContainersToRemove.length);
+}
+
+export async function updateTemporaryContainerTitle(temporaryContainerTitle) {
+    const log = logger.start(updateTemporaryContainerTitle, temporaryContainerTitle);
+
+    // find temporary containers before update title
+    const cookieStoreIds = Object.keys(containers).filter(cookieStoreId => isTemporary(cookieStoreId));
+
+    TEMPORARY.name = temporaryContainerTitle;
+
+    if (searchParams.has('add-listeners')) {
+        Listeners.contextualIdentities.onUpdated.remove(onUpdated);
     }
 
-    log.log('removing...');
+    for (const cookieStoreId of cookieStoreIds) {
+        await update(cookieStoreId, {
+            name: createTemporaryName(cookieStoreId),
+        }).catch(log.onCatch(["can't update", cookieStoreId]));
+    }
 
-    await remove(tempContainersToRemove, containersStorage);
+    if (searchParams.has('add-listeners')) {
+        Listeners.contextualIdentities.onUpdated.add(onUpdated, {waitListener: false});
+    }
 
-    log.stop('removed:', tempContainersToRemove.length);
-}
-
-export function setTemporaryContainerTitle(temporaryContainerTitle) {
-    logger.log('setTemporaryContainerTitle', temporaryContainerTitle);
-    TEMPORARY.name = temporaryContainerTitle;
-}
-
-export function getTemporaryContainerTitle() {
-    return TEMPORARY.name;
-}
-
-export async function updateTemporaryContainerTitle(temporaryContainerTitle, containersStorage = containers) {
-    const log = logger.start('updateTemporaryContainerTitle', temporaryContainerTitle);
-
-    const cookieStoreIds = Object.keys(containersStorage)
-        .filter(cookieStoreId => isTemporary(cookieStoreId, null, containersStorage));
-
-    setTemporaryContainerTitle(temporaryContainerTitle);
-
-    log.log('cookieStoreIds', cookieStoreIds);
+    const broadcastUpdateData = {temporaryContainerTitle};
 
     if (cookieStoreIds.length) {
-        removeListeners();
-
-        for (const cookieStoreId of cookieStoreIds) {
-            await update(cookieStoreId, {
-                name: getTemporaryContainerName(cookieStoreId),
-            }, containersStorage).catch(log.onCatch(["can't update", cookieStoreId]));
-        }
-
-        addListeners({waitListener: false});
-
-        Messages.sendMessageFromBackground('containers-updated'); // update container temporary name on tabs will work only on not archived groups
+        broadcastUpdateData.containers = containers;
     }
 
-    log.stop();
+    broadcastUpdate(broadcastUpdateData);
+
+    log.stop('updated count:', cookieStoreIds.length);
+}
+
+function createTemporaryName(cookieStoreId) {
+    const [containerId = cookieStoreId] = /\d+$/.exec(cookieStoreId) ?? [];
+    return `${TEMPORARY.name} ${containerId}`;
 }

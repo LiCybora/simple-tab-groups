@@ -78,8 +78,6 @@ const {
     }
 });
 
-await Containers.init();
-
 export default {
     name: Constants.MODULES.OPTIONS,
     mixins: [

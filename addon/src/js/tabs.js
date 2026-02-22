@@ -74,7 +74,7 @@ export async function create({url, active, pinned, title, index, windowId, opene
     tab.cookieStoreId = getNewTabContainer(tab, {newTabContainer, ifDifferentContainerReOpen, excludeContainersForReOpen});
 
     if (tab.cookieStoreId === Constants.TEMPORARY_CONTAINER) {
-        tab.cookieStoreId = await Containers.createTemporaryContainer();
+        tab.cookieStoreId = (await Containers.createTemporary()).cookieStoreId;
     } else {
         tab.cookieStoreId = Containers.get(tab.cookieStoreId).cookieStoreId;
     }
