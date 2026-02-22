@@ -16,6 +16,7 @@ import Lang from '/js/lang.js?translate-page';
 import * as Groups from '/js/groups.js';
 import * as Tabs from '/js/tabs.js';
 import * as Utils from '/js/utils.js';
+import * as Windows from '/js/windows.js';
 
 import defaultGroupMixin from '/js/mixins/default-group.mixin.js';
 import globalMixin from '/js/mixins/global.mixin.js';
@@ -101,8 +102,8 @@ export default {
 
             return this.unSyncTabs.filter(tab => Utils.mySearchFunc(searchStr, Tabs.getTitle(tab, true), this.extendedSearch));
         },
-        isCurrentWindowIsAllow() {
-            return Utils.isWindowAllow(this.currentWindow);
+        isCurrentWindowIsNormal() {
+            return Windows.isNormal(this.currentWindow);
         },
     },
     methods: {
@@ -134,7 +135,7 @@ export default {
                 .$on('drag-moving', (item, isMoving) => item.isMoving = isMoving)
                 .$on('drag-over', (item, isOver) => item.isOver = isOver);
 
-            if (!this.isCurrentWindowIsAllow) {
+            if (!this.isCurrentWindowIsNormal) {
                 window.addEventListener('resize', () => {
                     storage.windowWidth = window.innerWidth;
                     storage.windowHeight = window.innerHeight;
@@ -196,7 +197,7 @@ export default {
         },
 
         async applyGroup({id: groupId}, {id: tabId} = {}, openInNewWindow = false) {
-            if (!this.isCurrentWindowIsAllow) {
+            if (!this.isCurrentWindowIsNormal) {
                 await browser.windows.update(this.currentWindow.id, {
                     state: browser.windows.WindowState.MINIMIZED,
                 });
@@ -208,7 +209,7 @@ export default {
                 windowId: openInNewWindow ? 'new' : null,
             });
 
-            if (!this.isCurrentWindowIsAllow) {
+            if (!this.isCurrentWindowIsNormal) {
                 this.closeThisWindow();
             }
         },
@@ -250,7 +251,7 @@ export default {
                 }
             } else if (group) {
                 this.applyGroup(group, tab);
-            } else if (this.isCurrentWindowIsAllow) {
+            } else if (this.isCurrentWindowIsNormal) {
                 await this.sendMessageModule('Tabs.moveNative', [tab.id], {
                     windowId: this.currentWindow.id,
                     index: -1,

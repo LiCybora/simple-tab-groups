@@ -925,8 +925,8 @@ const onCreatedWindow = catchFunc(async function onCreatedWindow(win) {
         return;
     }
 
-    if (!Utils.isWindowAllow(win)) {
-        log.stop('window is not allow');
+    if (!Windows.isNormal(win)) {
+        log.stop('window is not normal');
         return;
     }
 

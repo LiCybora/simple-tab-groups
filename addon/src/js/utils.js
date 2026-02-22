@@ -191,10 +191,6 @@ export function normalizeTabFavIcon(tab) {
     return tab;
 }
 
-export function isWindowAllow(win) {
-    return win?.type === browser.windows.WindowType.NORMAL;
-}
-
 const createTabUrlRegexp = /^((http|moz-extension|view-source)|about:blank)/,
     emptyUrlsArray = new Set(['about:blank', 'about:newtab', 'about:home']);
 

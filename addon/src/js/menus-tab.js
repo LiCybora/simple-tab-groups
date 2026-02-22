@@ -208,7 +208,7 @@ async function onWindowFocusChanged(windowId) {
         return;
     }
 
-    const isNormalWindow = await Windows.isNormal(windowId);
+    const isNormalWindow = await Windows.isNormalId(windowId);
 
     if (!isNormalWindow) {
         return;

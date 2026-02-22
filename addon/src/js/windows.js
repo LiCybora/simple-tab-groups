@@ -16,7 +16,7 @@ export async function load(withTabs = false, includeFavIconUrl, includeThumbnail
         }).catch(() => []),
     ]);
 
-    windows = await Promise.all(windows.filter(Utils.isWindowAllow).map(Cache.loadWindowSession));
+    windows = await Promise.all(windows.filter(isNormal).map(Cache.loadWindowSession));
     windows = windows.filter(Boolean);
 
     if (withTabs) {
@@ -65,14 +65,18 @@ export async function create(groupId, activeTabId) {
     }
 }
 
-export function setFocus(windowId) {
-    return browser.windows.update(windowId, {
+export async function setFocus(windowId) {
+    return await browser.windows.update(windowId, {
         focused: true,
     }).catch(logger.onCatch(['setFocus', windowId]));
 }
 
-export async function isNormal(windowId) {
-    const log = logger.start(isNormal, windowId);
+export function isNormal(win) {
+    return win?.type === browser.windows.WindowType.NORMAL;
+}
+
+export async function isNormalId(windowId) {
+    const log = logger.start(isNormalId, windowId);
 
     const win = await browser.windows.get(windowId).catch(() => null);
 
@@ -81,7 +85,7 @@ export async function isNormal(windowId) {
         return false;
     }
 
-    const normal = Utils.isWindowAllow(win);
+    const normal = isNormal(win);
 
     log.stop(normal);
     return normal;
@@ -92,7 +96,7 @@ export async function getLastFocusedNormalWindow(returnId = true) {
 
     let lastFocusedWindow = await browser.windows.getLastFocused().catch(log.onCatch('windows.getLastFocused', false));
 
-    if (Utils.isWindowAllow(lastFocusedWindow)) {
+    if (isNormal(lastFocusedWindow)) {
         if (returnId) {
             log.stop('windowId', lastFocusedWindow.id);
             return lastFocusedWindow.id;

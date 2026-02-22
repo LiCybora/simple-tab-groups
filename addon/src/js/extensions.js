@@ -70,7 +70,7 @@ export function onChanged(listener) {
 }
 
 async function load() {
-    const log = logger.start('load');
+    const log = logger.start(load);
 
     let result = [];
 
