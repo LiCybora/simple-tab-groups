@@ -20,14 +20,15 @@ const DEFAULT_EVENT_PREFS = {
 const mockedEventNames = new Set;
 const CUSTOM_EVENT_SCHEMES = new Map;
 
-const isFirstExtensionStartTimePromise = !self.__getExtensionStartTimePromise;
-self.__getExtensionStartTimePromise ??= getExtensionStartTime();
+const EXTENSION_START_TIME_PROMISE_SYMBOL = Symbol.for('__listeners_extension_start_time_promise__');
+const isFirstExtensionStartTimePromise = !self[EXTENSION_START_TIME_PROMISE_SYMBOL];
+const getExtensionStartTimePromise = self[EXTENSION_START_TIME_PROMISE_SYMBOL] ??= getExtensionStartTime();
 
 CUSTOM_EVENT_SCHEMES.set('extension.onStart', {
     calledOnce: true,
     event: {
         async addListener(realListener) {
-            const EXTENSION_START_TIME = await self.__getExtensionStartTimePromise;
+            const EXTENSION_START_TIME = await getExtensionStartTimePromise;
 
             if (!EXTENSION_START_TIME) {
                 if (isFirstExtensionStartTimePromise) {
@@ -44,7 +45,7 @@ CUSTOM_EVENT_SCHEMES.set('extension.onWake', {
     calledOnce: true,
     event: {
         async addListener(realListener) {
-            const EXTENSION_START_TIME = await self.__getExtensionStartTimePromise;
+            const EXTENSION_START_TIME = await getExtensionStartTimePromise;
 
             if (EXTENSION_START_TIME) {
                 realListener();

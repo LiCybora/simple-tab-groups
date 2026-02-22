@@ -19,10 +19,10 @@ const logger = new Logger(Constants.MODULES.EXTENSIONS);
 const storage = localStorage.create(Constants.MODULES.EXTENSIONS);
 const MOZ_EXTENSION_URL_REGEXP = /^moz-extension:\/\/([^\/]+)/;
 
-const extensions = [... await (self.__extensionsLoadPromise ??= load())];
-
+const extensions = [...await load()];
 const onChangedListeners = new Set;
-const autoDetectConflicted = new URL(import.meta.url).searchParams.has('auto-detect-conflicted');
+const contextParams = new URL(import.meta.url).searchParams;
+const autoDetectConflicted = contextParams.has('auto-detect-conflicted');
 
 Listeners.extension.onStart.add(() => autoDetectConflicted && detectConflicted());
 Listeners.extension.onStart.add(() => addListeners(false));

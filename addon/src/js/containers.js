@@ -41,9 +41,9 @@ const shared = self[SHARED_KEY] ??= {
 export const TEMPORARY = shared.TEMPORARY;
 const containers = shared.containers;
 const onChangedListeners = shared.onChangedListeners;
-const searchParams = new URL(import.meta.url).searchParams;
+const contextParams = new URL(import.meta.url).searchParams;
 
-if (searchParams.has('add-listeners')) {
+if (contextParams.has('add-listeners')) {
     addListeners();
 } else {
     containersBroadcast.on('updated', ({data}) => {
@@ -365,7 +365,7 @@ export async function updateTemporaryContainerTitle(temporaryContainerTitle) {
 
     TEMPORARY.name = temporaryContainerTitle;
 
-    if (searchParams.has('add-listeners')) {
+    if (contextParams.has('add-listeners')) {
         Listeners.contextualIdentities.onUpdated.remove(onUpdated);
     }
 
@@ -375,7 +375,7 @@ export async function updateTemporaryContainerTitle(temporaryContainerTitle) {
         }).catch(log.onCatch(["can't update", cookieStoreId]));
     }
 
-    if (searchParams.has('add-listeners')) {
+    if (contextParams.has('add-listeners')) {
         Listeners.contextualIdentities.onUpdated.add(onUpdated, {waitListener: false});
     }
 
