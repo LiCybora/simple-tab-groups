@@ -10,7 +10,7 @@ import * as Containers from './containers.js';
 import * as Extensions from './extensions.js';
 import * as Groups from './groups.js';
 import * as Windows from './windows.js';
-// import * as Storage from './storage.js';
+import * as Storage from './storage.js';
 
 const logger = new Logger('Tabs');
 
@@ -94,7 +94,7 @@ export async function create({url, active, pinned, title, index, windowId, opene
     return newTab;
 }
 
-export async function createMultiple(tabs, tryRestoreOpeners, hideTabs = true) {
+export async function createMultiple(tabs, tryRestoreOpeners = false, hideTabs = true) {
     const log = logger.start('createMultiple', {tryRestoreOpeners, hideTabs}, tabs.map(tab => Utils.extractKeys(tab, [
         'id',
         'cookieStoreId',
@@ -321,15 +321,30 @@ export async function createTempActiveTab(windowId, createPinnedTab = true, newT
 export async function add(groupId, cookieStoreId, url, title) {
     const log = logger.start('add', {groupId, cookieStoreId, url, title});
 
-    const {group} = await Groups.load(groupId);
+    const windowId = Cache.getWindowId(groupId);
 
-    // TODO get rid of BG
-    const [tab] = await createMultiple([{
+    let {group} = await Groups.load(groupId, !windowId);
+
+    const tab = await create({
         url,
         title,
         cookieStoreId,
+        index: windowId ? null : group.tabs.pop()?.index + 1,
+        // windowId, // windowId will get from Cache.getWindowId into create function
         ...Groups.getNewTabParams(group),
-    }]);
+    }, true);
+
+    if (!windowId) {
+        await hide(tab, true);
+    }
+
+    const options = await Storage.get('showTabsWithThumbnailsInManageGroups');
+    ({group} = await Groups.load(groupId, true, true, options.showTabsWithThumbnailsInManageGroups));
+
+    backgroundSelf.sendMessageFromBackground('tabs-updated', {
+        groupId,
+        tabs: group.tabs,
+    });
 
     log.stop(tab);
     return tab;
@@ -383,8 +398,7 @@ export async function updateThumbnail(tabId) {
 
         log.stop('success');
     } catch (e) {
-        log.logError('cant create thumbnail', e);
-        log.stopError(String(e));
+        log.stopWarn('cant create thumbnail', e);
     }
 }
 
