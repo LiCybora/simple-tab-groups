@@ -122,7 +122,7 @@ new Vue({
                             'file:',
                             `${err.fileName}:${err.lineNumber}:${err.columnNumber}`,
                             'stack:',
-                            err.stack.split('\n').join(` ◁ `) || '<em>[empty]</em>'
+                            err.stack.split('\n').filter(Boolean).join(` ◁ `) || '<em>[empty]</em>'
                         );
                     } catch {
                         title.push(JSON.stringify(k));
@@ -178,7 +178,7 @@ new Vue({
             try {
                 // const oldStack = stack.stack;
                 Object.assign(stack, JSON.parse(stack.message));
-                stack.stack = stack.stack.split('\n');
+                stack.stack = stack.stack.split('\n').filter(Boolean);
                 // stack.stack = ['Stack from logger arguments:', ...stack.stack.split('\n'), 'native:', ...oldStack];
             } catch (e) { }
 

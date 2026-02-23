@@ -4,7 +4,7 @@ import * as Constants from './constants.js';
 import JSON from './json.js';
 import * as Utils from './utils.js';
 import * as Messages from './messages.js';
-import {normalizeArgumentValue, getStack} from './logger-utils.js';
+import {normalizeArgumentValue, getStack, getFuncName} from './logger-utils.js';
 
 const prefixGlue = '.'; // ➡️  →
 
@@ -55,9 +55,7 @@ function setLoggerFuncs() {
             startArgs = [...startArgs[0], ...startArgs.slice(1)];
         }
 
-        if (typeof startArgs[0] === 'function') {
-            startArgs[0] = getFuncName(startArgs[0]);
-        }
+        startArgs = normalizeArgumentValue(startArgs);
 
         const logger = new Logger(startArgs.shift(), this.prefixes.slice());
 
@@ -298,10 +296,6 @@ export function getLogs() {
 
 export function clearLogs() {
     logs.length = 0;
-}
-
-function getFuncName(func) {
-    return func.name || 'anonymous';
 }
 
 export function catchFunc(asyncFunc, logger) {

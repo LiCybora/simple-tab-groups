@@ -2,16 +2,14 @@
 import * as Constants from './constants.js';
 import JSON from './json.js';
 
+const MAX_STRING_LENGTH = 1024 * 1024 * 0.1; // ~100KB
+
 const UNNECESSARY_LOG_STRINGS = [
     Constants.STG_BASE_URL + 'js/',
     Constants.STG_BASE_URL,
     'async*',
     'Async*',
 ];
-
-function removeUnnecessaryStrings(str) {
-    return UNNECESSARY_LOG_STRINGS.reduce((s, strToDel) => s.replaceAll(strToDel, ''), String(str));
-}
 
 const DELETE_STACK_LINE_INCLUDES = [
     'vue.runtime.esm.js',
@@ -28,6 +26,10 @@ const DELETE_STACK_LINE_STARTS_WITH = [
     'getArgumentsModuleCall',
     'catchFunc',
 ];
+
+function removeUnnecessaryStrings(str) {
+    return UNNECESSARY_LOG_STRINGS.reduce((s, strToDel) => s.replaceAll(strToDel, ''), String(str));
+}
 
 export function getStack(e, start = 0, to = 50) {
     return removeUnnecessaryStrings(e.stack)
@@ -64,12 +66,11 @@ export function objToNativeError(obj) {
 }
 
 export function normalizeError(event) {
-    let nativeError = event.error || event;
+    let nativeError = event?.error || event || {};
 
     if (
-        !nativeError ||
         typeof nativeError === 'string' ||
-        !String(nativeError?.name).toLowerCase().includes('error') ||
+        !String(nativeError.name).toLowerCase().includes('error') ||
         nativeError.fileName === 'undefined' ||
         !nativeError.stack?.length
     ) {
@@ -87,7 +88,9 @@ export function normalizeError(event) {
     };
 }
 
-const MAX_STRING_LENGTH = 1024 * 1024 * 0.1; // ~100KB
+export function getFuncName(func) {
+    return func.name || String(func).slice(0, 50);
+}
 
 export function normalizeArgumentValue(value) {
     if (value instanceof Error) return normalizeError(value);
@@ -102,6 +105,7 @@ export function normalizeArgumentValue(value) {
         }
         return clone;
     }
+    if (typeof value === 'function') return getFuncName(value);
     return value;
 }
 
