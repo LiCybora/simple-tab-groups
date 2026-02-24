@@ -36,6 +36,7 @@ export default {
     data() {
         self.app = this;
 
+        this.offListeners = new Set();
         this.sendMessage = sendMessage;
         this.sendMessageModule = sendMessageModule;
 
@@ -129,43 +130,41 @@ export default {
             this.loadUnsyncedTabs(startUpData);
         },
 
-        isTabLoading: Utils.isTabLoading,
+        isTabLoading: Tabs.isLoading,
         getTabTitle: Tabs.getTitle,
         getGroupTitle: Groups.getTitle,
         groupTabsCountMessage: Groups.tabsCountMessage,
 
         tabGroupsSetupListeners() {
-            const offChangedContainers = Containers.onChanged(() => this.onChangedContainers());
+            this.offListeners.add(Containers.onChanged(() => this.onChangedContainers()));
 
             this.$on('window-closed', () => this.loadWindows());
 
-            this.$on('tab-updated', request => {
-                const tab = this.allTabs[request.tabId] ?? this.unSyncTabs.find(tab => tab.id === request.tabId);
-                tab && Object.assign(tab, request.changeInfo);
+            Tabs.on('updated', ({tabId, changeInfo}) => {
+                const tab = this.allTabs[tabId] ?? this.unSyncTabs.find(tab => tab.id === tabId);
+                tab && Object.assign(tab, changeInfo);
             });
-            this.$on('tab-removed', request => {
-                if (request.groupId) {
-                    const group = this.groups.find(group => group.id === request.groupId);
-                    const tabIndex = group.tabs.findIndex(tab => tab.id === request.tabId);
+            Tabs.on('updated.group', ({groupId, tabs}) => {
+                const group = this.groups.find(group => group.id === groupId);
+                group.tabs = tabs.map(tab => this.mapTab(tab, group.isArchive));
+            });
+            Tabs.on('updated.all', ({windows}) => {
+                this.loadUnsyncedTabs({windows});
+            });
+            Tabs.on('removed', ({tabId, groupId}) => {
+                const group = this.groups.find(group => group.id === groupId);
+                const tabIndex = group.tabs.findIndex(tab => tab.id === tabId);
 
-                    if (tabIndex !== -1) {
-                        group.tabs.splice(tabIndex, 1);
-                    }
-                } else {
-                    const tabIndex = this.unSyncTabs.findIndex(tab => tab.id === request.tabId);
-
-                    if (tabIndex !== -1) {
-                        this.unSyncTabs.splice(tabIndex, 1);
-                    }
+                if (tabIndex !== -1) {
+                    group.tabs.splice(tabIndex, 1);
                 }
             });
+            Tabs.on('removed.unsync', ({tabId}) => {
+                const tabIndex = this.unSyncTabs.findIndex(tab => tab.id === tabId);
 
-            this.$on('tabs-updated', request => {
-                const group = this.groups.find(group => group.id === request.groupId);
-                group.tabs = request.tabs.map(tab => this.mapTab(tab, group.isArchive));
-            });
-            this.$on('unsync-tabs-updated', request => {
-                this.loadUnsyncedTabs(request);
+                if (tabIndex !== -1) {
+                    this.unSyncTabs.splice(tabIndex, 1);
+                }
             });
 
             this.$on('group-added', request => {
@@ -195,7 +194,9 @@ export default {
             this.$on('lock-addon', () => {
                 this.isLoading = true;
                 disconnect();
-                offChangedContainers();
+                Tabs.off();
+                this.offListeners.forEach(off => off());
+                this.offListeners.clear();
             });
         },
         onChangedContainers() {
@@ -288,7 +289,7 @@ export default {
                 }
             }
 
-            tab = Utils.normalizeTabFavIcon(tab);
+            tab = Tabs.normalizeFavIcon(tab);
 
             tab = this.mapTabContainer(tab);
 

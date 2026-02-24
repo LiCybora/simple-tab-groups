@@ -2,12 +2,25 @@
     "include": [
         "addon/**/*.js",
         "plugins/**/*.js",
-        "translate/**/*.js",
+        "translate/**/*.js"
     ],
 
     "compilerOptions": {
-        "target": "es2024",
-        "module": "esnext"
+        "target": "ES2024",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+
+        "baseUrl": ".",
+        "paths": {
+            "/js/*": ["addon/src/js/*"]
+        },
+
+        // "checkJs": true,
+        // "noImplicitAny": false
+    },
+
+    "typeAcquisition": {
+        "include": ["firefox-webext-browser"]
     },
 
     "vueCompilerOptions": {

@@ -475,7 +475,7 @@ export default {
                     let tabData = {},
                         tab = oldTab.entries.pop();
 
-                    tab = Utils.normalizeTabUrl(tab);
+                    tab.url = Utils.normalizeUrl(tab.url);
 
                     if (!Utils.isUrlAllowToCreate(tab.url)) {
                         return;

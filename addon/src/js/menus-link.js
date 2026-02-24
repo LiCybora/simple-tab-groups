@@ -7,7 +7,6 @@ import * as Utils from '/js/utils.js';
 import * as Tabs from '/js/tabs.js';
 import * as Groups from '/js/groups.js';
 import * as Storage from '/js/storage.js';
-import {isChangedBooleanKey} from '/js/storage-utils.js';
 import Notification from '/js/notification.js';
 import Logger from '/js/logger.js';
 import Lang from '/js/lang.js';
@@ -142,7 +141,7 @@ export function removeListeners() {
 }
 
 async function onStorageChanged(changes) {
-    if (isChangedBooleanKey('showContextMenuOnLinks', changes)) {
+    if (Storage.isChangedBooleanKey('showContextMenuOnLinks', changes)) {
         logger.log('onStorageChanged', {showContextMenuOnLinks: changes.showContextMenuOnLinks.newValue});
 
         if (changes.showContextMenuOnLinks.newValue) {
@@ -153,7 +152,7 @@ async function onStorageChanged(changes) {
         }
     }
 
-    if (isChangedBooleanKey('showArchivedGroups', changes)) {
+    if (Storage.isChangedBooleanKey('showArchivedGroups', changes)) {
         const settings = await loadSettings();
 
         if (!settings.showContextMenuOnLinks) {

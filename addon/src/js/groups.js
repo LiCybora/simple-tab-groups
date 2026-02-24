@@ -553,7 +553,7 @@ export async function unload(groupId) {
         return false;
     }
 
-    if (group.tabs.some(Utils.isTabCanNotBeHidden)) {
+    if (group.tabs.some(Tabs.isCanNotBeHidden)) {
         Notification('notPossibleSwitchGroupBecauseSomeTabShareMicrophoneOrCamera');
         log.stopError('some Tab Can Not Be Hidden');
         return false;

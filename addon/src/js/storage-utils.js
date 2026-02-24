@@ -44,3 +44,11 @@ export function isChangedBooleanKey(key, changes) {
 
     return changes[key].newValue !== changes[key].oldValue;
 }
+
+export function isChangedStringKey(key, changes) {
+    if (typeof changes[key]?.newValue !== 'string' || typeof changes[key]?.oldValue !== 'string') {
+        return false;
+    }
+
+    return changes[key].newValue !== changes[key].oldValue;
+}

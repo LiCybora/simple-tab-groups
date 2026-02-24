@@ -10,7 +10,6 @@ import * as Tabs from '/js/tabs.js';
 import * as Groups from '/js/groups.js';
 import * as Windows from '/js/windows.js';
 import * as Storage from '/js/storage.js';
-import {isChangedBooleanKey} from '/js/storage-utils.js';
 import Notification from '/js/notification.js';
 import Logger from '/js/logger.js';
 import Lang from '/js/lang.js';
@@ -175,7 +174,7 @@ export function removeListeners() {
 }
 
 async function onStorageChanged(changes) {
-    if (isChangedBooleanKey('showContextMenuOnTabs', changes)) {
+    if (Storage.isChangedBooleanKey('showContextMenuOnTabs', changes)) {
         logger.log('onStorageChanged', {showContextMenuOnTabs: changes.showContextMenuOnTabs});
 
         if (changes.showContextMenuOnTabs.newValue) {
@@ -186,7 +185,7 @@ async function onStorageChanged(changes) {
         }
     }
 
-    if (isChangedBooleanKey('showArchivedGroups', changes)) {
+    if (Storage.isChangedBooleanKey('showArchivedGroups', changes)) {
         const settings = await loadSettings();
 
         if (!settings.showContextMenuOnTabs) {
@@ -258,7 +257,7 @@ export async function setIconAsGroupIcon(info, tab) {
         return;
     }
 
-    tab = Utils.normalizeTabFavIcon(tab);
+    tab = Tabs.normalizeFavIcon(tab);
     await Groups.setIconUrl(groupId, tab.favIconUrl);
 
     log.stop();

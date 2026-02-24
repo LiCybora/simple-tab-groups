@@ -8,7 +8,6 @@ import * as Utils from '/js/utils.js';
 import * as Tabs from '/js/tabs.js';
 import * as Groups from '/js/groups.js';
 import * as Storage from '/js/storage.js';
-import {isChangedBooleanKey} from '/js/storage-utils.js';
 import * as Browser from '/js/browser.js';
 import * as Permissions from '/js/permissions.js';
 import Notification from '/js/notification.js';
@@ -176,7 +175,7 @@ async function onPermissionsChanged(permissions) {
 }
 
 async function onStorageChanged(changes) {
-    if (isChangedBooleanKey('showArchivedGroups', changes)) {
+    if (Storage.isChangedBooleanKey('showArchivedGroups', changes)) {
         const hasPermission = await Bookmarks.hasPermission();
 
         if (!hasPermission) {

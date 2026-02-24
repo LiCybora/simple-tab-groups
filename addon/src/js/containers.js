@@ -9,7 +9,7 @@ import * as ConstantsBrowser from './constants-browser.js';
 import Logger from './logger.js';
 import Notification from './notification.js';
 import Lang from './lang.js';
-import * as containersBroadcast from './broadcast.js?channel=containers';
+import * as ContainersBroadcast from './broadcast.js?channel=containers';
 import * as Storage from './storage.js';
 
 const logger = new Logger('Containers');
@@ -46,7 +46,7 @@ const contextParams = new URL(import.meta.url).searchParams;
 if (contextParams.has('add-listeners')) {
     addListeners();
 } else {
-    containersBroadcast.on('updated', ({data}) => {
+    ContainersBroadcast.on('updated', ({data}) => {
         if (data.temporaryContainerTitle) {
             TEMPORARY.name = data.temporaryContainerTitle;
             logger.log('temporaryContainerTitle updated from broadcast');
@@ -62,7 +62,7 @@ if (contextParams.has('add-listeners')) {
 }
 
 function broadcastUpdate(data) {
-    containersBroadcast.send({action: 'updated', data}, {includeSelf: false});
+    ContainersBroadcast.send({action: 'updated', data}, {includeSelf: false});
 }
 
 function addListeners() {

@@ -150,7 +150,7 @@ export default {
                 }
 
                 for (const tab of group.tabs) {
-                    if (!tab.thumbnail && !tab.discarded && Utils.isTabLoaded(tab)) {
+                    if (!tab.thumbnail && !tab.discarded && Tabs.isLoaded(tab)) {
                         this.updateTabThumbnail(tab);
                     }
                 }

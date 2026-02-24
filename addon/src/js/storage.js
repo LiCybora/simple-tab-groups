@@ -4,6 +4,8 @@ import * as StorageUtils from './storage-utils.js';
 import Logger from './logger.js';
 import JSON from './json.js';
 
+export * from './storage-utils.js';
+
 const logger = new Logger('Storage');
 
 export async function get(keys, defaultData = Constants.DEFAULT_OPTIONS) {

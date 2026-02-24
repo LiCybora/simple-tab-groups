@@ -1,6 +1,5 @@
 
 import * as Constants from './constants.js';
-import * as ConstantsBrowser from './constants-browser.js';
 import JSON from './json.js';
 
 export const INNER_HTML = 'innerHTML';
@@ -183,14 +182,6 @@ export function isAvailableFavIconUrl(favIconUrl) {
     return true;
 }
 
-export function normalizeTabFavIcon(tab) {
-    if (!isAvailableFavIconUrl(tab.favIconUrl)) {
-        tab.favIconUrl = ConstantsBrowser.DEFAULT_FAVICON;
-    }
-
-    return tab;
-}
-
 const createTabUrlRegexp = /^((http|moz-extension|view-source)|about:blank)/,
     emptyUrlsArray = new Set(['about:blank', 'about:newtab', 'about:home']);
 
@@ -234,8 +225,8 @@ export function normalizeUrl(url) {
     if (!url || typeof url !== 'string') {
         return '';
     } else if (url.startsWith('moz-extension')) {
-        const urlObj = new URL(url),
-            urlStr = urlObj.searchParams.get('url') || urlObj.searchParams.get('u') || urlObj.searchParams.get('go');
+        const urlObj = new URL(url);
+        const urlStr = urlObj.searchParams.get('url') || urlObj.searchParams.get('u') || urlObj.searchParams.get('go');
 
         return urlStr ? normalizeUrl(urlStr) : url;
     } else if (url.startsWith(readerUrl)) {
@@ -245,39 +236,9 @@ export function normalizeUrl(url) {
     return url;
 }
 
-export function normalizeTabUrl(tab) {
-    tab.url = normalizeUrl(tab.url);
-
-    return tab;
-}
-
 const UUID_REGEXP = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function isUUID(uuid) {
     return UUID_REGEXP.test(uuid);
-}
-
-export function isTabPinned(tab) {
-    return tab.pinned === true;
-}
-
-export function isTabNotPinned(tab) {
-    return !isTabPinned(tab);
-}
-
-export function isTabCanBeHidden(tab) {
-    return !isTabPinned(tab) && tab.sharingState && !tab.sharingState.screen && !tab.sharingState.camera && !tab.sharingState.microphone;
-}
-
-export function isTabCanNotBeHidden(tab) {
-    return !isTabCanBeHidden(tab);
-}
-
-export function isTabLoaded(tab) {
-    return tab.status === browser.tabs.TabStatus.COMPLETE;
-}
-
-export function isTabLoading(tab) {
-    return tab.status === browser.tabs.TabStatus.LOADING;
 }
 
 export function concatTabs(windowsOrGroups) {

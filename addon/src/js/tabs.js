@@ -1,8 +1,21 @@
 
+import Listeners from '/js/listeners.js\
+?tabs.onActivated\
+&tabs.onCreated\
+&tabs.onUpdated=[{"properties":["title","status","favIconUrl","hidden","pinned","discarded","audible"]}]\
+&tabs.onRemoved\
+&tabs.onMoved\
+&tabs.onDetached\
+&tabs.onAttached\
+&storage.local.onChanged\
+';
 import './prefixed-storage.js';
 import Logger from './logger.js';
 import backgroundSelf from './background.js';
 import Notification from './notification.js';
+import BatchProcessor from './batch-processor.js';
+import * as Broadcast from './broadcast.js';
+import * as TabsBroadcast from './broadcast.js?channel=tabs';
 import * as Constants from './constants.js';
 import * as Utils from './utils.js';
 import * as Cache from './cache.js';
@@ -10,13 +23,325 @@ import * as Containers from './containers.js';
 import * as Extensions from './extensions.js';
 import * as Groups from './groups.js';
 import * as Windows from './windows.js';
+import * as ConstantsBrowser from './constants-browser.js';
 import * as Storage from './storage.js';
 
 const logger = new Logger('Tabs');
-
 const mainStorage = localStorage.create(Constants.MODULES.BACKGROUND);
+const options = await Storage.get(['showTabsWithThumbnailsInManageGroups', 'colorScheme']);
 
-export async function create({url, active, pinned, title, index, windowId, openerTabId, cookieStoreId, newTabContainer, ifDifferentContainerReOpen, excludeContainersForReOpen, groupId, favIconUrl, thumbnail}, skipTracking = false) {
+export function addListeners(options) {
+    Listeners.tabs.onActivated.add(onActivated, options);
+    Listeners.tabs.onCreated.add(onCreated, options);
+    Listeners.tabs.onUpdated.add(onUpdated, options);
+    Listeners.tabs.onRemoved.add(onRemoved, options);
+    Listeners.tabs.onMoved.add(onMoved, options);
+    Listeners.tabs.onDetached.add(onDetached, options);
+    Listeners.tabs.onAttached.add(onAttached, options);
+    Listeners.storage.local.onChanged.add(onStorageChanged, options);
+}
+
+export function removeEvents() {
+    Listeners.tabs.onActivated.remove(onActivated);
+    Listeners.tabs.onCreated.remove(onCreated);
+    Listeners.tabs.onUpdated.remove(onUpdated);
+    Listeners.tabs.onRemoved.remove(onRemoved);
+    Listeners.tabs.onMoved.remove(onMoved);
+    Listeners.tabs.onDetached.remove(onDetached);
+    Listeners.tabs.onAttached.remove(onAttached);
+    Listeners.storage.local.onChanged.remove(onStorageChanged);
+}
+
+// listeners
+export const {on, off} = TabsBroadcast;
+
+function send(action, data) {
+    TabsBroadcast.send({action, ...data}, {
+        includeSelf: false,
+    });
+}
+
+function onActivated({tabId, windowId, previousTabId = null}) {
+    if (
+        skip.tracking.has(tabId) ||
+        skip.tracking.has(previousTabId) ||
+        skip.removed.has(tabId) ||
+        skip.removed.has(previousTabId)
+    ) {
+        return;
+    }
+
+    logger.log('onActivated', {tabId, windowId, previousTabId})
+
+    send('updated', {
+        tabId: tabId,
+        changeInfo: {active: true},
+    });
+
+    if (previousTabId) {
+        send('updated', {
+            tabId: previousTabId,
+            changeInfo: {active: false},
+        });
+    }
+}
+
+const updatedBatch = new BatchProcessor(async (groupId) => {
+    logger.log('updatedBatch', groupId);
+
+    if (groupId === 'unsync') {
+        const windows = await Windows.load(true, true, options.showTabsWithThumbnailsInManageGroups);
+        send('updated.all', {
+            windows,
+        });
+    } else {
+        const {group} = await Groups.load(groupId, true, true, options.showTabsWithThumbnailsInManageGroups);
+        send('updated.group', {
+            groupId,
+            tabs: group.tabs,
+        });
+    }
+});
+
+const skip = {
+    created: new Set(),
+    tracking: new Set(),
+    removed: new Set(),
+};
+
+export function skipTracking(tabs, accum = new Set) {
+    for (const tab of tabs) {
+        const id = extractId(tab);
+        skip.tracking.add(id);
+        accum.add(id);
+    }
+
+    return accum;
+}
+
+export function continueTracking(tabs, accum = null) {
+    for (const tab of tabs) {
+        const id = extractId(tab);
+        skip.tracking.delete(id);
+        accum?.delete(id);
+    }
+}
+
+export function isSkippedTracking(tab) {
+    return skip.tracking.has(extractId(tab));
+}
+
+export function clearSkipTracking() { // TODO remove/refactor
+    return skip.tracking.clear();
+}
+
+async function onCreated(tab) {
+    await Utils.wait(50);
+
+    if (skip.created.has(tab.id)) {
+        return;
+    }
+
+    delete tab.groupId; // TODO tmp
+
+    logger.log('onCreated', tab);
+
+    Cache.setTab(tab);
+
+    if (isPinned(tab)) {
+        logger.log('onCreated 🛑 skip pinned tab', tab.id);
+        return;
+    }
+
+    await Cache.setTabGroup(tab.id, null, tab.windowId)
+        .catch(logger.onCatch("onCreated can't set group", false));
+
+    Cache.applyTabSession(tab);
+
+    updatedBatch.add(tab.groupId || 'unsync', tab.id);
+}
+
+async function onUpdated(tabId, changeInfo, tab) {
+    if (skip.removed.has(tab.id)) {
+        return;
+    }
+
+    if (skip.tracking.has(tab.id)) {
+        Cache.setTab(tab);
+        return;
+    }
+
+    delete tab.groupId; // TODO tmp
+
+    const log = logger.start('onUpdated', tabId, changeInfo);
+
+    changeInfo = Cache.getRealTabStateChanged(tab);
+
+    Cache.setTab(tab);
+
+    if (!changeInfo) {
+        log.stop('🛑 changeInfo keys was not changed');
+        return;
+    }
+
+    if (isPinned(tab) && !Object.hasOwn(changeInfo, 'pinned')) {
+        log.stop('🛑 tab is pinned');
+        return;
+    }
+
+    if (changeInfo.favIconUrl) {
+        await Cache.setTabFavIcon(tab.id, changeInfo.favIconUrl)
+            .catch(log.onCatch(['cant set favIcon', tab, changeInfo], false));
+    }
+
+    if (Object.hasOwn(changeInfo, 'pinned') || Object.hasOwn(changeInfo, 'hidden')) {
+        if (changeInfo.pinned || changeInfo.hidden) {
+            changeInfo.pinned && log.log('remove group for pinned tab', tab.id);
+            changeInfo.hidden && log.log('remove group for hidden tab', tab.id);
+
+            await Cache.removeTabGroup(tab.id).catch(() => {});
+        } else if (changeInfo.pinned === false) {
+            log.log('tab is unpinned', tab.id);
+
+            await Cache.setTabGroup(tab.id, null, tab.windowId)
+                .catch(log.onCatch(["can't set group to tab, !pinned", tab.id], false));
+        } else if (changeInfo.hidden === false) {
+            log.log('tab is showing', tab.id);
+
+            Cache.applyTabSession(tab);
+
+            if (tab.groupId) {
+                log.log('call applyGroup for tab', tab.id, 'groupId', tab.groupId);
+                await self.applyGroup(tab.windowId, tab.groupId, tab.id) // TODO
+                    .catch(log.onCatch(["can't applyGroup", tab.groupId], false));
+            } else {
+                log.log('call setTabGroup for tab', tab.id);
+                await Cache.setTabGroup(tab.id, null, tab.windowId)
+                    .catch(log.onCatch(["can't set group to tab, !hidden", tab.id], false));
+            }
+        }
+
+        log.stop();
+        return;
+    }
+
+    send('updated', {
+        tabId: tab.id,
+        changeInfo,
+    });
+
+    if (options.showTabsWithThumbnailsInManageGroups && isLoaded(changeInfo)) {
+        await updateThumbnail(tab.id);
+    }
+
+    log.stop();
+}
+
+function onRemoved(tabId, {isWindowClosing, windowId}) {
+    const silent = skip.removed.has(tabId);
+
+    skip.removed.add(tabId); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
+
+    const groupId = Cache.getTabGroup(tabId);
+
+    updatedBatch.delete(groupId || 'unsync', tabId);
+
+    if (silent) {
+        Cache.removeTab(tabId);
+        return;
+    }
+
+    logger.log('onRemoved', tabId, {isWindowClosing, windowId, groupId});
+
+    if (isWindowClosing) {
+        Broadcast.send({
+            action: 'add-restore-tab-on-removed-window',
+            tabId,
+        });
+    } else {
+        Cache.removeTab(tabId);
+        if (groupId) {
+            send('removed', {
+                tabId,
+                groupId,
+            });
+        } else {
+            send('removed.unsync', {
+                tabId,
+            });
+        }
+    }
+}
+
+function onMoved(tabId) {
+    if (
+        skip.tracking.has(tabId) ||
+        skip.removed.has(tabId)
+    ) {
+        return;
+    }
+
+    const groupId = Cache.getTabGroup(tabId);
+
+    logger.log('onMoved', {tabId, groupId});
+
+    updatedBatch.add(groupId || 'unsync', tabId);
+
+    /*
+    if (Cache.getTabGroup(tabId)) {
+        clearTimeout(openerTabTimer);
+        openerTabTimer = setTimeout(() => Tabs.get().catch(() => {}), 500); // load visible tabs of current window for set openerTabId
+    } */
+}
+
+async function onDetached(tabId, {oldWindowId}) { // notice: called before onAttached
+    if (
+        skip.tracking.has(tabId) ||
+        skip.removed.has(tabId)
+    ) {
+        return;
+    }
+
+    const groupId = Cache.getWindowGroup(oldWindowId);
+
+    logger.log('onDetached', {tabId, oldWindowId, groupId});
+
+    updatedBatch.add(groupId || 'unsync', tabId);
+}
+
+async function onAttached(tabId, {newWindowId}) { // called when tabs.move()
+    if (
+        skip.tracking.has(tabId) ||
+        skip.removed.has(tabId)
+    ) {
+        return;
+    }
+
+    const log = logger.start('onAttached', {tabId, newWindowId});
+
+    await Cache.setTabGroup(tabId, null, newWindowId)
+        .catch(log.onCatch("can't set group"));
+
+    const groupId = Cache.getTabGroup(tabId);
+
+    log.log('attached tab groupId', groupId);
+
+    updatedBatch.add(groupId || 'unsync', tabId);
+
+    log.stop();
+}
+
+function onStorageChanged(changes) {
+    if (Storage.isChangedBooleanKey('showTabsWithThumbnailsInManageGroups', changes)) {
+        options.showTabsWithThumbnailsInManageGroups = changes.showTabsWithThumbnailsInManageGroups.newValue;
+    }
+    if (Storage.isChangedStringKey('colorScheme', changes)) {
+        options.colorScheme = changes.colorScheme.newValue;
+    }
+}
+
+// methods
+export async function create({url, active, pinned, title, index, windowId, openerTabId, cookieStoreId, newTabContainer, ifDifferentContainerReOpen, excludeContainersForReOpen, groupId, favIconUrl, thumbnail}, skipCreated = false) {
     if (!Constants.IS_BACKGROUND_PAGE) {
         throw Error('is not background');
     }
@@ -81,8 +406,8 @@ export async function create({url, active, pinned, title, index, windowId, opene
 
     const newTab = await browser.tabs.create(tab);
 
-    if (skipTracking === true) {
-        self.skipTabs.created.add(newTab.id);
+    if (skipCreated === true) {
+        skip.created.add(newTab.id);
     }
 
     delete newTab.groupId; // TODO temp
@@ -258,13 +583,13 @@ export async function get(
 
     let tabs = await browser.tabs.query(query);
 
-    tabs = tabs.filter(tab => !self.skipTabs.removed.has(tab.id)); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
+    tabs = tabs.filter(tab => !skip.removed.has(tab.id)); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
 
     tabs.forEach(tab => delete tab.groupId); // TODO temp
 
     if (!query.pinned) {
         tabs = await Promise.all(
-            tabs.map(tab => Cache.loadTabSession(Utils.normalizeTabUrl(tab), includeFavIconUrl, includeThumbnail))
+            tabs.map(tab => Cache.loadTabSession(normalizeUrl(tab), includeFavIconUrl, includeThumbnail))
         );
     }
 
@@ -276,13 +601,13 @@ export async function get(
 
 export async function getOne(tabId) {
     try {
-        if (self.skipTabs.removed.has(tabId)) { // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
+        if (skip.removed.has(tabId)) { // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
             return null;
         }
 
         const tab = await browser.tabs.get(tabId);
         delete tab.groupId; // TODO temp
-        return Utils.normalizeTabUrl(tab);
+        return normalizeUrl(tab);
     } catch {
         return null;
     }
@@ -338,10 +663,8 @@ export async function add(groupId, cookieStoreId, url, title) {
         await hide(tab, true);
     }
 
-    const options = await Storage.get('showTabsWithThumbnailsInManageGroups');
     ({group} = await Groups.load(groupId, true, true, options.showTabsWithThumbnailsInManageGroups));
-
-    backgroundSelf.sendMessageFromBackground('tabs-updated', {
+    send('updated.group', {
         groupId,
         tabs: group.tabs,
     });
@@ -360,7 +683,7 @@ export async function updateThumbnail(tabId) {
         return;
     }
 
-    if (!Utils.isTabLoaded(tab)) {
+    if (!isLoaded(tab)) {
         log.stop('tab is loading');
         return;
     }
@@ -391,7 +714,7 @@ export async function updateThumbnail(tabId) {
 
         await Cache.setTabThumbnail(tab.id, thumbnail);
 
-        backgroundSelf.sendMessageFromBackground('tab-updated', {
+        send('updated', {
             tabId: tab.id,
             changeInfo: {thumbnail},
         });
@@ -414,7 +737,7 @@ export async function move(tabIds, groupId, params = {}) {
         return [];
     }
 
-    const skippedTabs = self.skipTabsTracking(tabIds);
+    const skippedTabs = skipTracking(tabIds);
 
     const tabsCantHide = new Set;
     const groupWindowId = Cache.getWindowId(groupId);
@@ -434,14 +757,14 @@ export async function move(tabIds, groupId, params = {}) {
     tabs = tabs.filter(function(tab) {
         if (tab.pinned) {
             showPinnedMessage = true;
-            self.continueTabsTracking([tab], skippedTabs);
+            continueTracking([tab], skippedTabs);
             log.log('tab pinned', tab);
             return false;
         }
 
-        if (Utils.isTabCanNotBeHidden(tab)) {
+        if (isCanNotBeHidden(tab)) {
             tabsCantHide.add(getTitle(tab, false, 20));
-            self.continueTabsTracking([tab], skippedTabs);
+            continueTracking([tab], skippedTabs);
             log.log('cant move tab', tab);
             return false;
         }
@@ -529,7 +852,7 @@ export async function move(tabIds, groupId, params = {}) {
                 ...newTabParams,
             }, true);
 
-            self.skipTabsTracking([newTab], skippedTabs);
+            skipTracking([newTab], skippedTabs);
 
             if (tab.active) {
                 activeTabs.push({...newTab, active: true});
@@ -553,12 +876,12 @@ export async function move(tabIds, groupId, params = {}) {
 
         await Promise.all(tabs.map(tab => Cache.setTabGroup(tab.id, groupId)));
 
-        backgroundSelf.sendMessageFromBackground('groups-updated');
+        backgroundSelf.sendMessageFromBackground('groups-updated'); // TODO
 
         log.log('end moving');
     }
 
-    self.continueTabsTracking(skippedTabs);
+    continueTracking(skippedTabs);
 
     if (showPinnedMessage) {
         log.log('notify pinnedTabsAreNotSupported');
@@ -605,7 +928,7 @@ export async function move(tabIds, groupId, params = {}) {
     } else {
         let tabTitle = getTitle(firstTab, false, 50);
         message = ['moveTabToGroupMessage', [group.title, tabTitle]];
-        firstTab = Utils.normalizeTabFavIcon(firstTab);
+        firstTab = normalizeFavIcon(firstTab);
         iconUrl = firstTab.favIconUrl;
     }
 
@@ -629,7 +952,7 @@ async function filterExist(tabs, returnTabIds = false) {
         return browser.tabs.get(extractId(tab))
             .then(returnFunc, log.onCatch(['not found tab', tab], false));
     }));
-    tabs = tabs.filter(Boolean).filter(tab => !self.skipTabs.removed.has(tab.id)); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
+    tabs = tabs.filter(Boolean).filter(tab => !skip.removed.has(tab.id)); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
     tabs.forEach(tab => delete tab.groupId); // TODO temp
 
     log.assert(lengthBefore === tabs.length, 'tabs length after filter are not equal. not found tabs:',
@@ -703,7 +1026,7 @@ const tabsActionSchema = new Map([
     ['move', {sendArray: true, processGroupId: true}], // TODO refactor to use it
 ]);
 
-async function tabsAction({action, skipTracking = false, silentRemove = false}, tabs, ...funcArgs) {
+async function tabsAction({action, skipTrackingFlag = false, silentRemove = false}, tabs, ...funcArgs) {
     const schema = tabsActionSchema.get(action);
 
     if (!schema) {
@@ -721,18 +1044,18 @@ async function tabsAction({action, skipTracking = false, silentRemove = false}, 
     }
 
     const tabIds = tabs.map(extractId);
-    const log = logger.start(`tabsAction`, {skipTracking, silentRemove}, `browser.tabs.${action}(`,tabIds,...funcArgs,')');
+    const log = logger.start(`tabsAction`, {skipTrackingFlag, silentRemove}, `browser.tabs.${action}(`,tabIds,...funcArgs,')');
 
     if (action === 'remove') {
-        skipTracking = true;
+        skipTrackingFlag = true;
 
         if (silentRemove) {
-            tabIds.forEach(tabId => self.skipTabs.removed.add(tabId));
+            tabIds.forEach(tabId => skip.removed.add(tabId));
         }
     }
 
-    if (skipTracking) {
-        self.skipTabsTracking(tabIds);
+    if (skipTrackingFlag) {
+        skipTracking(tabIds); // TODO
     }
 
     let result = [];
@@ -769,8 +1092,8 @@ async function tabsAction({action, skipTracking = false, silentRemove = false}, 
         log.throwError('invalid schema config');
     }
 
-    if (skipTracking) {
-        self.continueTabsTracking(tabIds);
+    if (skipTrackingFlag) {
+        continueTracking(tabIds);
     }
 
     if (schema.processGroupId) {
@@ -782,16 +1105,16 @@ async function tabsAction({action, skipTracking = false, silentRemove = false}, 
     return result;
 }
 
-export async function show(tabs, skipTracking = false) {
-    return await tabsAction({action: 'show', skipTracking}, tabs);
+export async function show(tabs, skipTrackingFlag = false) {
+    return await tabsAction({action: 'show', skipTrackingFlag}, tabs);
 }
 
-export async function hide(tabs, skipTracking = false) {
-    return await tabsAction({action: 'hide', skipTracking}, tabs);
+export async function hide(tabs, skipTrackingFlag = false) {
+    return await tabsAction({action: 'hide', skipTrackingFlag}, tabs);
 }
 
-export async function discard(tabs, skipTracking = false) {
-    return await tabsAction({action: 'discard', skipTracking}, tabs);
+export async function discard(tabs, skipTrackingFlag = false) {
+    return await tabsAction({action: 'discard', skipTrackingFlag}, tabs);
 }
 
 export async function reload(tabs, bypassCache = false) {
@@ -813,32 +1136,8 @@ export async function remove(tabs, silentRemove = false) {
     return await tabsAction({action: 'remove', silentRemove}, tabs);
 }
 
-// const restrictedDomainsRegExp = /^https?:\/\/(.+\.)?(mozilla\.(net|org|com)|firefox\.com)\//;
-const restrictedDomains = new Set('accounts-static.cdn.mozilla.net,accounts.firefox.com,addons.cdn.mozilla.net,addons.mozilla.org,api.accounts.firefox.com,content.cdn.mozilla.net,discovery.addons.mozilla.org,oauth.accounts.firefox.com,profile.accounts.firefox.com,support.mozilla.org,sync.services.mozilla.com'.split(','));
-
-export function isCanSendMessage({url}) {
-    if (url === 'about:blank') {
-        return true;
-    }
-
-    if (url.startsWith('about:') || url.startsWith('moz-extension')) {
-        return false;
-    }
-
-    try {
-        return !restrictedDomains.has(new URL(url).hostname);
-    } catch {
-        return false;
-    }
-}
-
-export function extractId(tab) {
-    return tab.id || tab;
-}
-
-export function sendMessage(tabId, message) {
-    message.colorScheme = backgroundSelf.options.colorScheme;
-
+export async function sendMessage(tabId, message) {
+    message.colorScheme = options.colorScheme;
     return browser.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
@@ -935,4 +1234,60 @@ export function getTitle({id, index, title, url, discarded, windowId, lastAccess
     }
 
     return sliceLength ? Utils.sliceText(title, sliceLength) : title;
+}
+
+// const restrictedDomainsRegExp = /^https?:\/\/(.+\.)?(mozilla\.(net|org|com)|firefox\.com)\//;
+const restrictedDomains = new Set('accounts-static.cdn.mozilla.net,accounts.firefox.com,addons.cdn.mozilla.net,addons.mozilla.org,api.accounts.firefox.com,content.cdn.mozilla.net,discovery.addons.mozilla.org,oauth.accounts.firefox.com,profile.accounts.firefox.com,support.mozilla.org,sync.services.mozilla.com'.split(','));
+
+export function isCanSendMessage({url}) {
+    if (url === 'about:blank') {
+        return true;
+    }
+
+    if (url.startsWith('about:') || url.startsWith('moz-extension')) {
+        return false;
+    }
+
+    try {
+        return !restrictedDomains.has(new URL(url).hostname);
+    } catch {
+        return false;
+    }
+}
+
+export function extractId(tab) {
+    return tab.id || tab;
+}
+
+export function isPinned(tab) {
+    return tab.pinned === true;
+}
+
+function isCanBeHidden(tab) {
+    return !isPinned(tab) && tab.sharingState && !tab.sharingState.screen && !tab.sharingState.camera && !tab.sharingState.microphone;
+}
+
+export function isCanNotBeHidden(tab) {
+    return !isCanBeHidden(tab);
+}
+
+export function isLoaded(tab) {
+    return tab.status === browser.tabs.TabStatus.COMPLETE;
+}
+
+export function isLoading(tab) {
+    return tab.status === browser.tabs.TabStatus.LOADING;
+}
+
+export function normalizeUrl(tab) {
+    tab.url = Utils.normalizeUrl(tab.url);
+    return tab;
+}
+
+export function normalizeFavIcon(tab) {
+    if (!Utils.isAvailableFavIconUrl(tab.favIconUrl)) {
+        tab.favIconUrl = ConstantsBrowser.DEFAULT_FAVICON;
+    }
+
+    return tab;
 }
