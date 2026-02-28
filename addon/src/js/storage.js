@@ -38,9 +38,7 @@ export async function getForMigrate() {
 export async function set(data) {
     const log = logger.start('set', Object.keys(data));
 
-    if (data.groups) {
-        data.groups.forEach(group => !group.isArchive && (group.tabs = []));
-    }
+    data.groups?.forEach(group => !group.isArchive && (group.tabs = []));
 
     const result = await browser.storage.local.set(data);
 
@@ -51,10 +49,10 @@ export async function set(data) {
 
 export function remove(...args) {
     logger.log('remove', args);
-    return browser.storage.local.remove(...args);
+    return browser.storage.local.remove(args.flat());
 }
 
-export function clear(...args) {
-    logger.log('clear', args);
-    return browser.storage.local.clear(...args);
+export function clear() {
+    logger.log('clear');
+    return browser.storage.local.clear();
 }

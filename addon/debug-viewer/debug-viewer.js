@@ -22,7 +22,7 @@ function isUUID(uuid) {
 }
 
 window.addEventListener('error', errorEventHandler);
-Vue.config.errorHandler = errorEventHandler;
+window.Vue.config.errorHandler = errorEventHandler;
 
 function getConsoleKey(log) {
     return Object.keys(log).find(k => k.includes('console'));
@@ -51,7 +51,7 @@ const excludeExtensions = new Set([
 
 const htmlTagArgumentRegExp = /^[^\s]+#[^\s]+$/;
 
-new Vue({
+new window.Vue({
     el: '#app',
     data: {
         file: null,
@@ -174,6 +174,13 @@ new Vue({
             }
             return `${hms} <span class="is-size-6 has-text-weight-semibold is-family-monospace">${ms}</span>`;
         },
+        hasTimeGap(log, index) {
+            if (index === 0) {
+                return false;
+            }
+
+            return log.time - this.logs[index - 1].time > 4000;
+        },
         getStackToView(stack) {
             try {
                 // const oldStack = stack.stack;
@@ -191,12 +198,14 @@ new Vue({
         },
         isHighlighted(log, byStack = false) {
             function reduceStackFuncs(l) {
-                return l.stacks
-                    .flat(Infinity)
-                    .filter(s => !s.startsWith?.('From') && !s.startsWith?.('Native'))
-                    .map(s => s.stack || s)
-                    .flat(Infinity)
-                    .map(s => s.split(':')[0]);
+                return new Set(
+                    l.stacks
+                        .flat(Infinity)
+                        .filter(s => !s.startsWith?.('From') && !s.startsWith?.('Native'))
+                        .map(s => s.stack || s)
+                        .flat(Infinity)
+                        .map(s => s.replace(/(:\d+):\d+/, '$1'))
+                );
             }
 
             if (byStack) {
@@ -216,7 +225,7 @@ new Vue({
                         return false;
                     }
 
-                    return stacks.includes(reduceStackFuncs(hLog)[0]);
+                    return stacks.intersection(reduceStackFuncs(hLog)).size > 0;
                 });
             } else {
                 return this.highlightedLogs.some(l => l.key === log.key);

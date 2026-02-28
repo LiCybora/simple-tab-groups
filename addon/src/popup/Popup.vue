@@ -18,6 +18,7 @@ import * as Containers from '/js/containers.js';
 import * as Groups from '/js/groups.js';
 import * as Tabs from '/js/tabs.js';
 import * as Utils from '/js/utils.js';
+import * as Cloud from '/js/sync/cloud/cloud.js';
 
 import defaultGroupMixin from '/js/mixins/default-group.mixin.js';
 import globalMixin from '/js/mixins/global.mixin.js';
@@ -175,6 +176,10 @@ export default {
                 result += ' (' + this.lang('lastUpdate') + `: ${this.syncCloudLastUpdateAgo})`;
             }
 
+            if (this.syncCloudErrorMessage) {
+                result += '\n' + this.syncCloudErrorMessage;
+            }
+
             return result;
         },
     },
@@ -222,20 +227,17 @@ export default {
                 .$on('drag-moving', (item, isMoving) => item.isMoving = isMoving)
                 .$on('drag-over', (item, isOver) => item.isOver = isOver);
 
-            this
-                .$on('sync-error', async ({name, message}) => {
-                    if (this.syncCloudProgress < 5) {
-                        this.syncCloudProgress = 15;
-                    }
+            Cloud.on('sync-error', async result => {
+                if (this.syncCloudProgress < 5) { // for better visibility of the progress bar
+                    this.syncCloudProgress = 15;
+                }
 
-                    if (this.syncCloudTriggeredByPopup) {
-                        const ok = await this.confirm(name, message, 'openSettings', 'is-info');
-                        ok && this.openOptionsPage('backup/sync');
-                    }
-                })
-                .$on('sync-finish', () => {
-                    this.syncCloudTriggeredByPopup = false;
-                });
+                const confirmed = await this.confirm(result.name, result.message, 'openSettings', 'is-info');
+
+                if (confirmed) {
+                    this.openOptionsPage('backup/sync');
+                }
+            });
 
             this.$on('group-removed', request => {
                 if (this.groupToShow?.id === request.groupId) {
@@ -642,7 +644,7 @@ export default {
             }
 
             if (!textPosition) {
-                throw Error('wrong key for this function');
+                throw new Error('wrong key for this function');
             }
 
             if (-1 !== focusedNodeIndex) {
@@ -688,20 +690,6 @@ export default {
             }
         },
 
-        async syncCloudClickInPopup() {
-            if (this.syncCloudTriggeredByPopup) {
-                return;
-            }
-
-            this.syncCloudTriggeredByPopup = true;
-
-            const syncResult = await this.syncCloud();
-
-            // disabled when event this.$on('sync-finish')
-            if (!syncResult) {
-                this.syncCloudTriggeredByPopup = false;
-            }
-        },
         settingsMenuAction({optionsCheckbox, sendMessage, key, closePopup}) {
             if (optionsCheckbox) {
                 this.optionsSave(key, !this.options[key]);
@@ -1184,8 +1172,8 @@ export default {
             v-if="options.syncEnable"
             tabindex="0"
             class="sync"
-            @click="syncCloudClickInPopup"
-            @keydown.enter="syncCloudClickInPopup"
+            @click="syncCloud()"
+            @keydown.enter="syncCloud()"
             :title="syncTitle"
             >
             <div class="circle-progress" :class="{
@@ -1197,7 +1185,7 @@ export default {
                 >
                 <figure class="image is-16x16">
                     <img src="/icons/cloud-arrow-up-solid.svg" />
-                    <img v-if="syncCloudHasError" id="sync-error-icon" src="/icons/exclamation-triangle-yellow.svg">
+                    <img v-if="syncCloudErrorMessage" id="sync-error-icon" src="/icons/exclamation-triangle-yellow.svg">
                 </figure>
             </div>
         </div>

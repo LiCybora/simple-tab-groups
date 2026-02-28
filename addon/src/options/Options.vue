@@ -13,14 +13,14 @@ import '/js/prefixed-storage.js';
 import * as Constants from '/js/constants.js';
 import * as Messages from '/js/messages.js';
 import Logger, {errorEventHandler} from '/js/logger.js';
-// import {objToNativeError} from '/js/logger-utils.js';
 import Notification from '/js/notification.js';
 import Lang from '/js/lang.js?translate-page';
 import * as Utils from '/js/utils.js';
 import * as Extensions from '/js/extensions.js';
-import * as Containers from '/js/containers.js';
+// import * as Containers from '/js/containers.js';
 import * as Bookmarks from '/js/bookmarks.js';
 import * as Storage from '/js/storage.js';
+import * as Cloud from '/js/sync/cloud/cloud.js';
 import * as File from '/js/file.js';
 import * as Host from '/js/host.js';
 import * as Groups from '/js/groups.js';
@@ -66,15 +66,9 @@ const {
     'group-removed',
     'group-updated',
     'groups-updated',
-    'sync-end',
-], ({action, changes}) => {
+], ({action}) => {
     if (action.startsWith('group')) {
         instance?.loadGroups();
-    } else if (action === 'sync-end') {
-        if (changes.local) {
-            instance?.optionsReload();
-            instance?.loadGroups();
-        }
     }
 });
 
@@ -251,6 +245,13 @@ export default {
         this.initLastUpdateBackups();
         window.addEventListener('focus', () => this.initLastUpdateBackups(), false);
         window.addEventListener('hashchange', () => this.hashChanged());
+
+        Cloud.on('sync-end', ({changes}) => {
+            if (changes.local) {
+                this.optionsReload();
+                this.loadGroups();
+            }
+        });
     },
     mounted() {
         this.goToBlock(HASH.block);
@@ -715,7 +716,7 @@ export default {
             this.permissions.bookmarks = await Bookmarks.hasPermission();
 
             if (this.permissions.bookmarks) {
-                this.defaultBookmarksParents = await browser.bookmarks.get(Constants.DEFAULT_BOOKMARKS_PARENTS);
+                this.defaultBookmarksParents = await Bookmarks.get(Constants.DEFAULT_BOOKMARKS_PARENTS);
             }
         },
 
@@ -1002,20 +1003,20 @@ export default {
                 <span v-text="lang('openManageGroupsInTab')"></span>
             </label>
             <label class="checkbox">
-                <input v-model="options.showConfirmDialogBeforeGroupDelete" type="checkbox" />
-                <span v-text="lang('showConfirmDialogBeforeGroupDelete')"></span>
-            </label>
-            <label class="checkbox">
-                <input v-model="options.showNotificationAfterGroupDelete" type="checkbox" />
-                <span v-text="lang('showNotificationAfterGroupDelete')"></span>
+                <input v-model="options.showTabsWithThumbnailsInManageGroups" type="checkbox" />
+                <span v-text="lang('showTabsWithThumbnailsInManageGroups')"></span>
             </label>
             <label class="checkbox">
                 <input v-model="options.showConfirmDialogBeforeGroupArchiving" type="checkbox" />
                 <span v-text="lang('showConfirmDialogBeforeGroupArchiving')"></span>
             </label>
             <label class="checkbox">
-                <input v-model="options.showTabsWithThumbnailsInManageGroups" type="checkbox" />
-                <span v-text="lang('showTabsWithThumbnailsInManageGroups')"></span>
+                <input v-model="options.showConfirmDialogBeforeGroupDelete" type="checkbox" />
+                <span v-text="lang('showConfirmDialogBeforeGroupDelete')"></span>
+            </label>
+            <label class="checkbox">
+                <input v-model="options.showNotificationAfterGroupDelete" type="checkbox" />
+                <span v-text="lang('showNotificationAfterGroupDelete')"></span>
             </label>
         </div>
 

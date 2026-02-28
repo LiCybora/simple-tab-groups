@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "启用日志记录",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "扩展发生错误时将自动启用日志",

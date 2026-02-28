@@ -21,8 +21,8 @@ export default {
     name: 'github-gist',
     mixins: [syncCloudMixin],
     data() {
-        this.LOCAL = Cloud.LOCAL;
-        this.CLOUD = Cloud.CLOUD;
+        this.TRUST_LOCAL = Cloud.TRUST_LOCAL;
+        this.TRUST_CLOUD = Cloud.TRUST_CLOUD;
 
         this.browserName = `${Constants.BROWSER_FULL_NAME} v${Constants.BROWSER.version}`;
         this.helpLink = Constants.PAGES.HELP.HOWTO_GITHUB_GIST;
@@ -41,7 +41,6 @@ export default {
                 save: this.saveSyncOptions.bind(this),
                 gist: null,
                 loadingGist: false,
-                error: '',
                 icon: {
                     load: '/icons/cloud-arrow-down-solid.svg',
                     save: '/icons/cloud-arrow-up-solid.svg',
@@ -58,7 +57,6 @@ export default {
                 save: this.saveLocalOptions.bind(this),
                 gist: null,
                 loadingGist: false,
-                error: '',
                 icon: {
                     load: '/icons/arrow-down.svg',
                     save: '/icons/floppy-disk-solid.svg',
@@ -69,11 +67,6 @@ export default {
     components: {
         popup,
         GithubGistFields,
-    },
-    watch: {
-        syncCloudErrorMessage() {
-            this.area.error = this.syncCloudErrorMessage;
-        },
     },
     computed: {
         areas() {
@@ -111,8 +104,6 @@ export default {
         this.local.load().then(() => {
             this.$watch('local.options.syncOptionsLocation', syncOptionsLocation => {
                 Storage.set({syncOptionsLocation});
-                this.area.error = '';
-                this.syncCloudProgress = 0;
             });
         });
 
@@ -121,16 +112,12 @@ export default {
     methods: {
         lang: Lang,
 
-        createCloud({githubGistToken, githubGistFileName}) {
-            return new GithubGist(githubGistToken, githubGistFileName);
-        },
-
         // SYNC
-        async loadSyncOptions(resetState) {
+        async loadSyncOptions() {
             if (!this.sync.disabled) {
                 Object.assign(this.sync.options, await SyncStorage.get());
                 this.sync.optionsBackup = {...this.sync.options};
-                await this.loadGistInfo(this.sync, resetState);
+                await this.loadGistInfo(this.sync);
             }
         },
 
@@ -139,10 +126,10 @@ export default {
         },
 
         // LOCAL
-        async loadLocalOptions(resetState) {
+        async loadLocalOptions() {
             Object.assign(this.local.options, await Storage.get(this.local.options));
             this.local.optionsBackup = {...this.local.options};
-            await this.loadGistInfo(this.local, resetState);
+            await this.loadGistInfo(this.local);
         },
 
         async saveLocalOptions() {
@@ -153,12 +140,7 @@ export default {
             return date.toLocaleString(Utils.UI_LANG, {timeStyle: 'short', ...options});
         },
 
-        async loadGistInfo(area, resetState = true) {
-            if (resetState) {
-                area.error = '';
-                this.syncCloudProgress = 0;
-            }
-
+        async loadGistInfo(area) {
             area.gist = null;
 
             if (!area.options.githubGistToken) {
@@ -168,7 +150,7 @@ export default {
             try {
                 area.loadingGist = true;
 
-                const GithubGistCloud = this.createCloud(area.options);
+                const GithubGistCloud = new GithubGist(area.options.githubGistToken, area.options.githubGistFileName);
 
                 const gist = await GithubGistCloud.getInfo();
 
@@ -222,31 +204,28 @@ export default {
         // MAIN
         async save(area) {
             try {
-                area.error = '';
                 area.loadingOptions = true;
 
                 if (area.options.githubGistToken) {
-                    const GithubGistCloud = this.createCloud(area.options);
-
-                    await GithubGistCloud.checkToken();
+                    await new GithubGist(area.options.githubGistToken, area.options.githubGistFileName).checkToken();
                 }
 
                 await area.save();
                 await area.load();
             } catch ({message}) {
-                area.error = new Cloud.CloudError(message).toString();
+                this.syncCloudErrorMessage = String(new Cloud.CloudError(message));
             } finally {
                 area.loadingOptions = false;
             }
         },
 
         async startCloudSync(trust) {
-            this.area.error = '';
-
             if (this.isCredentialsChanged) {
+                this.syncCloudErrorMessage = '';
+
                 await this.save(this.area);
 
-                if (this.showTrustSyncButtons || this.area.error) {
+                if (this.showTrustSyncButtons || this.syncCloudErrorMessage) {
                     return;
                 }
             }
@@ -255,7 +234,7 @@ export default {
         },
 
         async restoreBackup({version}) {
-            await this.syncCloud(Cloud.CLOUD, version);
+            await this.syncCloud(Cloud.TRUST_CLOUD, version);
         },
     },
 };
@@ -332,7 +311,7 @@ export default {
                 class="field"
                 :token.sync="area.options.githubGistToken"
                 :file-name.sync="area.options.githubGistFileName"
-                :error.sync="area.error"
+                :error-message.sync="syncCloudErrorMessage"
             ></github-gist-fields>
 
             <div class="is-flex is-align-items-center">
@@ -441,8 +420,8 @@ export default {
             <div class="simple-progress">
                 <div class="position" :class="{
                     'in-progress': syncCloudInProgress,
-                    'has-background-success': !area.error && syncCloudProgress === 100,
-                    'has-background-danger': !!area.error,
+                    'has-background-success': !syncCloudErrorMessage && syncCloudProgress === 100,
+                    'has-background-danger': !!syncCloudErrorMessage,
                 }"
                 :style="{
                     '--progress-value': `${syncCloudProgress}%`,
@@ -480,8 +459,8 @@ export default {
                             <p v-text="lang('syncDataInCloudCanBeDifferent')"></p>
                         </div>
                         <a href="#" class="dropdown-item" @click.prevent="startCloudSync()" v-text="lang('syncStart')"></a>
-                        <a href="#" class="dropdown-item" @click.prevent="startCloudSync(LOCAL)" v-text="lang('syncStartTrustLocal')"></a>
-                        <a href="#" class="dropdown-item" @click.prevent="startCloudSync(CLOUD)" v-text="lang('syncStartTrustCloud')"></a>
+                        <a href="#" class="dropdown-item" @click.prevent="startCloudSync(TRUST_LOCAL)" v-text="lang('syncStartTrustLocal')"></a>
+                        <a href="#" class="dropdown-item" @click.prevent="startCloudSync(TRUST_CLOUD)" v-text="lang('syncStartTrustCloud')"></a>
                     </div>
                 </div>
             </div>

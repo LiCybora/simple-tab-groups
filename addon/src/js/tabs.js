@@ -25,10 +25,22 @@ import * as Groups from './groups.js';
 import * as Windows from './windows.js';
 import * as ConstantsBrowser from './constants-browser.js';
 import * as Storage from './storage.js';
+import * as BrowserSettings from './browser-settings.js';
+
+export {on, off} from './broadcast.js?channel=tabs';
 
 const logger = new Logger('Tabs');
 const mainStorage = localStorage.create(Constants.MODULES.BACKGROUND);
-const options = await Storage.get(['showTabsWithThumbnailsInManageGroups', 'colorScheme']);
+const settings = await Storage.get(['showTabsWithThumbnailsInManageGroups', 'colorScheme']);
+const skipTrackingWindows = new Set();
+const skip = {
+    created: new Set(),
+    tracking: new Set(),
+    removed: new Set(),
+};
+const longUrls = {}; // tabId: url
+
+Listeners.storage.local.onChanged.add(onStorageChanged, {waitListener: false});
 
 export function addListeners(options) {
     Listeners.tabs.onActivated.add(onActivated, options);
@@ -38,10 +50,9 @@ export function addListeners(options) {
     Listeners.tabs.onMoved.add(onMoved, options);
     Listeners.tabs.onDetached.add(onDetached, options);
     Listeners.tabs.onAttached.add(onAttached, options);
-    Listeners.storage.local.onChanged.add(onStorageChanged, options);
 }
 
-export function removeEvents() {
+export function removeListeners() {
     Listeners.tabs.onActivated.remove(onActivated);
     Listeners.tabs.onCreated.remove(onCreated);
     Listeners.tabs.onUpdated.remove(onUpdated);
@@ -49,11 +60,7 @@ export function removeEvents() {
     Listeners.tabs.onMoved.remove(onMoved);
     Listeners.tabs.onDetached.remove(onDetached);
     Listeners.tabs.onAttached.remove(onAttached);
-    Listeners.storage.local.onChanged.remove(onStorageChanged);
 }
-
-// listeners
-export const {on, off} = TabsBroadcast;
 
 function send(action, data) {
     TabsBroadcast.send({action, ...data}, {
@@ -61,41 +68,27 @@ function send(action, data) {
     });
 }
 
-function onActivated({tabId, windowId, previousTabId = null}) {
-    if (
-        skip.tracking.has(tabId) ||
-        skip.tracking.has(previousTabId) ||
-        skip.removed.has(tabId) ||
-        skip.removed.has(previousTabId)
-    ) {
-        return;
-    }
+// TODO temp
+export async function sendGroupUpdated(groupId) {
+    const {group} = await Groups.load(groupId, true);
 
-    logger.log('onActivated', {tabId, windowId, previousTabId})
-
-    send('updated', {
-        tabId: tabId,
-        changeInfo: {active: true},
+    send('updated.group', {
+        groupId,
+        tabs: group.tabs,
     });
-
-    if (previousTabId) {
-        send('updated', {
-            tabId: previousTabId,
-            changeInfo: {active: false},
-        });
-    }
 }
 
-const updatedBatch = new BatchProcessor(async (groupId) => {
+// listeners
+const updatedBatch = new BatchProcessor(async (tabIds, groupId) => {
     logger.log('updatedBatch', groupId);
 
     if (groupId === 'unsync') {
-        const windows = await Windows.load(true, true, options.showTabsWithThumbnailsInManageGroups);
+        const windows = await Windows.load(true, true, settings.showTabsWithThumbnailsInManageGroups);
         send('updated.all', {
             windows,
         });
     } else {
-        const {group} = await Groups.load(groupId, true, true, options.showTabsWithThumbnailsInManageGroups);
+        const {group} = await Groups.load(groupId, true, true, settings.showTabsWithThumbnailsInManageGroups);
         send('updated.group', {
             groupId,
             tabs: group.tabs,
@@ -103,11 +96,13 @@ const updatedBatch = new BatchProcessor(async (groupId) => {
     }
 });
 
-const skip = {
-    created: new Set(),
-    tracking: new Set(),
-    removed: new Set(),
-};
+export function skipTrackingWindow(windowId) {
+    skipTrackingWindows.add(windowId);
+}
+
+export function continueTrackingWindow(windowId) {
+    skipTrackingWindows.delete(windowId);
+}
 
 export function skipTracking(tabs, accum = new Set) {
     for (const tab of tabs) {
@@ -138,18 +133,26 @@ export function clearSkipTracking() { // TODO remove/refactor
 async function onCreated(tab) {
     await Utils.wait(50);
 
-    if (skip.created.has(tab.id)) {
+    if (
+        skip.created.has(tab.id) ||
+        skip.removed.has(tab.id)
+    ) {
+        logger.log(onCreated, '🛑 skip tracking tab:', tab.id);
+        return;
+    }
+
+    if (skipTrackingWindows.has(tab.windowId)) {
+        logger.log(onCreated, '🛑 skip tracking tab:', tab.id, 'for window:', tab.windowId);
         return;
     }
 
     delete tab.groupId; // TODO tmp
 
-    logger.log('onCreated', tab);
+    logger.log(onCreated, tab);
 
     Cache.setTab(tab);
 
     if (isPinned(tab)) {
-        logger.log('onCreated 🛑 skip pinned tab', tab.id);
         return;
     }
 
@@ -158,7 +161,44 @@ async function onCreated(tab) {
 
     Cache.applyTabSession(tab);
 
-    updatedBatch.add(tab.groupId || 'unsync', tab.id);
+    updatedBatch.add(tab.id, tab.groupId || 'unsync');
+}
+
+async function onActivated({tabId, windowId, previousTabId = null}) {
+    await Utils.wait(50 + 20); // needs to wait skipTrackingWindows list
+
+    if (
+        skip.tracking.has(tabId) ||
+        skip.tracking.has(previousTabId) ||
+        skipTrackingWindows.has(windowId)
+    ) {
+        return;
+    }
+
+    logger.log('onActivated', {tabId, windowId, previousTabId})
+
+    if (!skip.removed.has(tabId)) {
+        send('updated', {
+            tabId: tabId,
+            changeInfo: {active: true},
+        });
+    }
+
+    if (previousTabId && !skip.removed.has(previousTabId)) {
+        send('updated', {
+            tabId: previousTabId,
+            changeInfo: {active: false},
+        });
+    }
+}
+
+async function processLongUrls(tabId, changeInfo) {
+    if (longUrls[tabId] && isLoaded(changeInfo)) {
+        sendMessage(tabId, {
+            action: 'long-url',
+            url: longUrls[tabId],
+        }).finally(() => delete longUrls[tabId]);
+    }
 }
 
 async function onUpdated(tabId, changeInfo, tab) {
@@ -166,14 +206,25 @@ async function onUpdated(tabId, changeInfo, tab) {
         return;
     }
 
+    processLongUrls(tabId, changeInfo);
+
     if (skip.tracking.has(tab.id)) {
         Cache.setTab(tab);
+        logger.log(onUpdated, '🛑 skip tracking for updated tab', tab.id);
+        return;
+    }
+
+    // if tab was restored along with window, it needs to wait when GrantRestore will add the window to the skipTrackingWindows
+    await Utils.wait(50 + 20); // 50ms for tab onCreated + 20ms as a margin
+
+    if (skipTrackingWindows.has(tab.windowId)) {
+        logger.log(onUpdated, '🛑 skip tracking tab:', tab.id, 'for window:', tab.windowId);
         return;
     }
 
     delete tab.groupId; // TODO tmp
 
-    const log = logger.start('onUpdated', tabId, changeInfo);
+    const log = logger.start(onUpdated, tabId, changeInfo);
 
     changeInfo = Cache.getRealTabStateChanged(tab);
 
@@ -230,7 +281,7 @@ async function onUpdated(tabId, changeInfo, tab) {
         changeInfo,
     });
 
-    if (options.showTabsWithThumbnailsInManageGroups && isLoaded(changeInfo)) {
+    if (settings.showTabsWithThumbnailsInManageGroups && isLoaded(changeInfo)) {
         await updateThumbnail(tab.id);
     }
 
@@ -244,14 +295,20 @@ function onRemoved(tabId, {isWindowClosing, windowId}) {
 
     const groupId = Cache.getTabGroup(tabId);
 
-    updatedBatch.delete(groupId || 'unsync', tabId);
+    updatedBatch.delete(tabId, groupId || 'unsync');
 
     if (silent) {
         Cache.removeTab(tabId);
+        logger.log(onRemoved, '🛑 skip tracking for removed tab', tabId);
         return;
     }
 
-    logger.log('onRemoved', tabId, {isWindowClosing, windowId, groupId});
+    if (skipTrackingWindows.has(windowId)) {
+        logger.log(onRemoved, '🛑 skip tracking tab:', tabId, 'for window:', windowId);
+        return;
+    }
+
+    logger.log(onRemoved, tabId, {isWindowClosing, windowId, groupId});
 
     if (isWindowClosing) {
         Broadcast.send({
@@ -273,19 +330,23 @@ function onRemoved(tabId, {isWindowClosing, windowId}) {
     }
 }
 
-function onMoved(tabId) {
+async function onMoved(tabId, {windowId, /* fromIndex, toIndex */}) {
+    // await Utils.wait(); // ? no needs for wait skipTrackingWindows list
+
     if (
         skip.tracking.has(tabId) ||
-        skip.removed.has(tabId)
+        skip.removed.has(tabId) ||
+        skipTrackingWindows.has(windowId)
     ) {
+        logger.log(onMoved, '🛑 skip tracking tab:', tabId, 'for window:', windowId);
         return;
     }
 
     const groupId = Cache.getTabGroup(tabId);
 
-    logger.log('onMoved', {tabId, groupId});
+    logger.log(onMoved, {tabId, groupId});
 
-    updatedBatch.add(groupId || 'unsync', tabId);
+    updatedBatch.add(tabId, groupId || 'unsync');
 
     /*
     if (Cache.getTabGroup(tabId)) {
@@ -295,60 +356,79 @@ function onMoved(tabId) {
 }
 
 async function onDetached(tabId, {oldWindowId}) { // notice: called before onAttached
+    // await Utils.wait(); // ? no needs for wait skipTrackingWindows list
+
     if (
         skip.tracking.has(tabId) ||
-        skip.removed.has(tabId)
+        skip.removed.has(tabId) ||
+        skipTrackingWindows.has(oldWindowId)
     ) {
+        logger.log(onDetached, '🛑 skip tracking tab:', tabId, 'for window:', oldWindowId);
         return;
     }
 
     const groupId = Cache.getWindowGroup(oldWindowId);
 
-    logger.log('onDetached', {tabId, oldWindowId, groupId});
+    logger.log(onDetached, {tabId, oldWindowId, groupId});
 
-    updatedBatch.add(groupId || 'unsync', tabId);
+    updatedBatch.add(tabId, groupId || 'unsync');
 }
 
 async function onAttached(tabId, {newWindowId}) { // called when tabs.move()
+    // await Utils.wait(); // ? no needs for wait skipTrackingWindows list
+
     if (
         skip.tracking.has(tabId) ||
-        skip.removed.has(tabId)
+        skip.removed.has(tabId) ||
+        skipTrackingWindows.has(newWindowId)
     ) {
+        logger.log(onAttached, '🛑 skip tracking tab:', tabId, 'for window:', newWindowId);
         return;
     }
 
-    const log = logger.start('onAttached', {tabId, newWindowId});
+    const log = logger.start(onAttached, {tabId, newWindowId});
 
     await Cache.setTabGroup(tabId, null, newWindowId)
         .catch(log.onCatch("can't set group"));
 
     const groupId = Cache.getTabGroup(tabId);
 
-    log.log('attached tab groupId', groupId);
+    log.log('groupId', groupId);
 
-    updatedBatch.add(groupId || 'unsync', tabId);
+    updatedBatch.add(tabId, groupId || 'unsync');
 
     log.stop();
 }
 
 function onStorageChanged(changes) {
     if (Storage.isChangedBooleanKey('showTabsWithThumbnailsInManageGroups', changes)) {
-        options.showTabsWithThumbnailsInManageGroups = changes.showTabsWithThumbnailsInManageGroups.newValue;
+        settings.showTabsWithThumbnailsInManageGroups = changes.showTabsWithThumbnailsInManageGroups.newValue;
     }
     if (Storage.isChangedStringKey('colorScheme', changes)) {
-        options.colorScheme = changes.colorScheme.newValue;
+        settings.colorScheme = changes.colorScheme.newValue;
     }
 }
 
 // methods
-export async function create({url, active, pinned, title, index, windowId, openerTabId, cookieStoreId, newTabContainer, ifDifferentContainerReOpen, excludeContainersForReOpen, groupId, favIconUrl, thumbnail}, skipCreated = false) {
+export async function create({url, active, pinned, title, index, windowId, openerTabId, cookieStoreId, newTabContainer, ifDifferentContainerReOpen, excludeContainersForReOpen, groupId, favIconUrl, thumbnail}, skipListener = false) {
     if (!Constants.IS_BACKGROUND_PAGE) {
-        throw Error('is not background');
+        throw new Error('is not background');
     }
+
+    skipListener = skipListener === true;
 
     const tab = {};
 
+    let longUrl;
+
     if (url) {
+        if (url.length > 100_000) {
+            if (!Utils.isUrlLengthValid(url)) {
+                longUrl = url;
+                url = Constants.PAGES.HELP.DUMMY;
+            }
+        }
+
         if (Utils.isUrlAllowToCreate(url)) {
             if (url.startsWith('moz-extension')) {
                 const uuid = Extensions.extractUUID(url);
@@ -356,13 +436,13 @@ export async function create({url, active, pinned, title, index, windowId, opene
                 if (Utils.isUUID(uuid)) {
                     tab.url = url;
                 } else {
-                    tab.url = Constants.PAGES.HELP.UNSUPPORTED_URL + '#' + url;
+                    tab.url = createUnsupportedUrlPage(url);
                 }
             } else {
                 tab.url = url;
             }
         } else if (url !== 'about:newtab') {
-            tab.url = Constants.PAGES.HELP.UNSUPPORTED_URL + '#' + url;
+            tab.url = createUnsupportedUrlPage(url);
         }
     }
 
@@ -372,12 +452,12 @@ export async function create({url, active, pinned, title, index, windowId, opene
         tab.pinned = true;
     }
 
-    if (!tab.active && !tab.pinned && tab.url && !tab.url.startsWith('about:')) {
+    if (!tab.active && !tab.pinned && tab.url && !tab.url.startsWith('about:') && !longUrl) {
         tab.discarded = true;
     }
 
     if (tab.discarded && title) {
-        tab.title = title;
+        tab.title = title.slice(0, 1000);
     }
 
     if (Number.isSafeInteger(index) && index >= 0) {
@@ -406,78 +486,136 @@ export async function create({url, active, pinned, title, index, windowId, opene
 
     const newTab = await browser.tabs.create(tab);
 
-    if (skipCreated === true) {
+    if (skipListener) {
         skip.created.add(newTab.id);
     }
 
     delete newTab.groupId; // TODO temp
 
+    if (longUrl) {
+        longUrls[newTab.id] = longUrl;
+        self.setTimeout(() => delete longUrls[newTab.id], 30_000);
+    }
+
     await Cache.setTabSession(newTab, {groupId, favIconUrl, thumbnail});
 
-    logger.log('create', newTab);
+    if (skipListener) {
+        logger.log('created', newTab.id);
+    } else {
+        logger.log('created', newTab);
+    }
 
     return newTab;
 }
 
-export async function createMultiple(tabs, tryRestoreOpeners = false, hideTabs = true) {
-    const log = logger.start('createMultiple', {tryRestoreOpeners, hideTabs}, tabs.map(tab => Utils.extractKeys(tab, [
-        'id',
-        'cookieStoreId',
-        'openerTabId',
-        'groupId',
-    ])));
+function createUnsupportedUrlPage(url) {
+    const urlObj = createUnsupportedUrlPage.urlObj ??= new URL(Constants.PAGES.HELP.UNSUPPORTED_URL);
+    urlObj.searchParams.set('url', url);
+    return urlObj.href;
+}
 
-    if (!tabs.length) {
+function isStrictlyAscendingBy(arr, key) {
+    return arr.every((item, i) => i === 0 || item[key] > arr[i - 1][key]);
+}
+
+export async function createMultiple(tabsToCreate, skipCreateListenerAndTracking = false) {
+    if (!Array.isArray(tabsToCreate)) {
+        throw new Error('tabs must be an array');
+    }
+
+    const log = logger.start(createMultiple, 'count:', tabsToCreate.length, {skipCreateListenerAndTracking});
+
+    if (!tabsToCreate.length) {
         log.stop('no tabs');
         return [];
     }
 
-    const oldNewTabIds = {};
+    const tabsToCreateBackup = tabsToCreate.map(tab => ({...tab}));
 
-    let newTabs = [];
-
-    for (const tab of tabs) {
-        delete tab.active;
-        delete tab.index;
-        delete tab.windowId;
+    for (const tab of tabsToCreate) {
+        delete tab.openerTabId;
     }
 
-    if (tryRestoreOpeners && Extensions.hasTreeTabs() && tabs.some(tab => tab.openerTabId)) {
-        log.log('tryRestoreOpeners');
-        for (const tab of tabs) {
-            if (tab.id && tab.openerTabId) {
-                tab.openerTabId = oldNewTabIds[tab.openerTabId];
+    const hasTreeTabs = Extensions.hasTreeTabs();
+    const createdTabsByWindow = new Map();
+
+    const settled = await Promise.allSettled(tabsToCreate.map(tab => create(tab, skipCreateListenerAndTracking)));
+
+    for (const [index, {status, value: createdTab, reason}] of settled.entries()) {
+        if (status === 'fulfilled') {
+            createdTabsByWindow.getOrInsert(createdTab.windowId, []).push(createdTab);
+
+            if (!createdTab.pinned) {
+                tabsToCreateBackup[index].newId = createdTab.id; // map id for restore openerTabId
             }
-
-            const newTab = await create(tab, true);
-
-            if (tab.id) {
-                oldNewTabIds[tab.id] = newTab.id;
-            }
-
-            newTabs.push(newTab);
+        } else {
+            log.logError(['failed to create tab:', tabsToCreateBackup[index], 'reason:'], reason);
         }
-    } else {
-        log.log('creating tabs');
-        tabs.forEach(tab => delete tab.openerTabId);
-        newTabs = await Promise.all(tabs.map(tab => create(tab, true)));
     }
 
-    newTabs = await moveNative(newTabs, {
-        index: -1,
-    });
+    // update openerTabIds for newly created tab ids
+    for (const tabToCreate of tabsToCreateBackup) {
+        if (tabToCreate.openerTabId > 0) {
+            const openerTab = tabsToCreateBackup.find(t => t.id === tabToCreate.openerTabId);
 
-    if (hideTabs) {
-        const tabsToHide = newTabs.filter(tab => !tab.pinned && tab.groupId && !Cache.getWindowId(tab.groupId));
+            if (tabToCreate !== openerTab && openerTab?.newId) {
+                tabToCreate.newOpenerTabId = openerTab.newId;
+            }
+        }
+    }
 
-        log.log('hide tabs length:', tabsToHide.length);
+    // sort tabs by previous order in each window and restore openerTabId for newly created tabs
+    for (let [windowId, createdTabs] of createdTabsByWindow) {
+        const needSorting = createdTabs.length > 1 && !isStrictlyAscendingBy(createdTabs, 'index');
 
-        await hide(tabsToHide, true);
+        // because of "New tab position" setting,
+        // tabs can be created in wrong order, so we need to re-sort them by previous index
+        if (needSorting) {
+            const minIndex = Math.min(...createdTabs.map(tab => tab.index));
+            createdTabs = await moveNative(createdTabs, {index: minIndex}, skipCreateListenerAndTracking);
+        }
+
+        if (hasTreeTabs) {
+            log.log('start restoring openerTabIds for tabs (count):', createdTabs.length);
+            // restore openerTabId only if opener tab in the same window
+            const createdTabIds = new Set(createdTabs.map(extractId));
+
+            for (const [index, tab] of createdTabs.entries()) {
+                if (tab.pinned) {
+                    log.log('skip pinned tab', tab.id);
+                    continue;
+                }
+
+                const {newOpenerTabId} = tabsToCreateBackup.find(t => t.newId === tab.id);
+
+                if (createdTabIds.has(newOpenerTabId)) {
+                    try {
+                        [createdTabs[index]] = await tabsAction({action: 'update'}, tab, {
+                            openerTabId: newOpenerTabId,
+                        }); // no need skipListener, addon don't track openerTabId changes
+                    } catch (e) {
+                        log.logError(['failed to restore openerTabId for tab:', tab.id, 'newOpenerTabId:', newOpenerTabId], e);
+
+                        const invalidTabId = /\d+/.exec(e.message)?.[0];
+
+                        if (invalidTabId == tab.id) { // "Invalid tab ID: 123"
+                            createdTabs[index] = null;
+                        } else if (invalidTabId == newOpenerTabId) {
+                            // do nothing
+                        }
+                    }
+                }
+            }
+
+            createdTabs = createdTabs.filter(Boolean);
+        }
+
+        createdTabsByWindow.set(windowId, createdTabs);
     }
 
     log.stop();
 
-    return newTabs;
+    return [...createdTabsByWindow.values()].flat();
 }
 
 export async function createUrlOnce(url) {
@@ -507,7 +645,7 @@ export async function createUrlOnce(url) {
 }
 
 export async function setActive(tabId = null, tabs = []) {
-    const log = logger.start('setActive', tabId, 'from tabs:', tabs.map(extractId));
+    const log = logger.start(setActive, tabId, 'from tabs:', tabs.map(extractId));
 
     let tabToActive = null;
 
@@ -539,6 +677,24 @@ export async function getActive(windowId = browser.windows.WINDOW_ID_CURRENT) {
     });
 
     return activeTab;
+}
+
+export async function getNewTabIndex(tabs) {
+    if (!tabs.length) {
+        return null;
+    }
+
+    const hasBrowserSettingsPermission = await BrowserSettings.hasPermission();
+
+    if (hasBrowserSettingsPermission) {
+        const {newTabPosition: {value: newTabPosition}} = await BrowserSettings.get();
+
+        if (newTabPosition === 'afterCurrent') {
+            return tabs.toSorted(Utils.sortBy('lastAccessed')).pop()?.index + 1 || null;
+        }
+    }
+
+    return tabs.slice().pop()?.index + 1 || null;
 }
 
 export async function getHighlightedIds(windowId = browser.windows.WINDOW_ID_CURRENT, clickedTab = null, pinned = false) {
@@ -579,7 +735,7 @@ export async function get(
         }
     }
 
-    const log = logger.start('get', query);
+    const log = logger.start(get, query);
 
     let tabs = await browser.tabs.query(query);
 
@@ -613,24 +769,23 @@ export async function getOne(tabId) {
     }
 }
 
-export async function getList(tabIds, includeFavIconUrl, includeThumbnail) {
-    const tabs = await Promise.all(tabIds.map(tabId => {
-        return getOne(tabId).then(tab => Cache.loadTabSession(tab, includeFavIconUrl, includeThumbnail));
-    }));
-
-    return tabs.filter(Boolean);
+async function getList(tabIds) {
+    return Promise.all(tabIds.map(getOne)).then(tabs => tabs.filter(Boolean));
 }
 
 export async function createTempActiveTab(windowId, createPinnedTab = true, newTabUrl) {
-    const log = logger.start('createTempActiveTab', {windowId, createPinnedTab, newTabUrl});
+    const log = logger.start(createTempActiveTab, {windowId, createPinnedTab, newTabUrl});
 
-    let pinnedTabs = await get(windowId, true, null);
+    const pinnedTabs = await get(windowId, true, null);
 
     if (pinnedTabs.length) {
         if (!pinnedTabs.some(tab => tab.active)) {
             await setActive(Utils.getLastActiveTab(pinnedTabs).id);
             log.stop('setActive pinned');
-        } else log.stop('pinned is active');
+        } else {
+            log.stop('pinned is active');
+        }
+        // no not return USER pinned tab, because it shouldn't be removed as a temp tab
     } else {
         const tempTab = await create({
             url: createPinnedTab ? (newTabUrl || 'about:blank') : (newTabUrl || 'about:newtab'),
@@ -644,7 +799,7 @@ export async function createTempActiveTab(windowId, createPinnedTab = true, newT
 }
 
 export async function add(groupId, cookieStoreId, url, title) {
-    const log = logger.start('add', {groupId, cookieStoreId, url, title});
+    const log = logger.start(add, {groupId, cookieStoreId, url, title});
 
     const windowId = Cache.getWindowId(groupId);
 
@@ -663,7 +818,7 @@ export async function add(groupId, cookieStoreId, url, title) {
         await hide(tab, true);
     }
 
-    ({group} = await Groups.load(groupId, true, true, options.showTabsWithThumbnailsInManageGroups));
+    ({group} = await Groups.load(groupId, true, true, settings.showTabsWithThumbnailsInManageGroups));
     send('updated.group', {
         groupId,
         tabs: group.tabs,
@@ -674,7 +829,7 @@ export async function add(groupId, cookieStoreId, url, title) {
 }
 
 export async function updateThumbnail(tabId) {
-    const log = logger.start('updateThumbnail', {tabId});
+    const log = logger.start(updateThumbnail, {tabId});
 
     const tab = await getOne(tabId);
 
@@ -726,9 +881,10 @@ export async function updateThumbnail(tabId) {
 }
 
 export async function move(tabIds, groupId, params = {}) {
-    const log = logger.start('move', {tabIds, groupId, params});
+    const log = logger.start(move, {tabIds, groupId, params});
 
-    let tabs = await getList(tabIds.slice());
+    let tabs = await getList(tabIds);
+    tabs = await Promise.all(tabs.map(tab => Cache.loadTabSession(tab, true, settings.showTabsWithThumbnailsInManageGroups)));
 
     if (tabs.length) {
         tabIds = tabs.map(extractId);
@@ -915,7 +1071,7 @@ export async function move(tabIds, groupId, params = {}) {
     }
 
     if (!params.showNotificationAfterMovingTabIntoThisGroup) {
-        log.stop(tabs, 'no notify');
+        log.stop('no notify, count:', tabs.length);
         return tabs;
     }
 
@@ -937,82 +1093,97 @@ export async function move(tabIds, groupId, params = {}) {
         module: ['background', 'applyGroup', null, groupId, firstTab.id],
     });
 
-    log.stop(tabs, 'with notify');
+    log.stop('with notify, count:', tabs.length);
     return tabs;
 }
 
-async function filterExist(tabs, returnTabIds = false) {
-    const tabIds = tabs.map(extractId);
-    const log = logger.start('filterExist', tabIds, {returnTabIds});
+export async function moveNative(tabs, moveProperties = {}, skipTrackingFlag = false, fixSessionAfterMove = true) {
+    tabs = Array.isArray(tabs) ? tabs : [tabs];
 
-    const lengthBefore = tabIds.length;
-    const returnFunc = returnTabIds ? t => t.id : t => t;
+    const tabsLengthBefore = tabs.length;
+    const log = logger.start(moveNative, 'tabs:', tabs.map(extractId), {moveProperties, skipTrackingFlag, fixSessionAfterMove});
 
-    tabs = await Promise.all(tabs.map(tab => {
-        return browser.tabs.get(extractId(tab))
-            .then(returnFunc, log.onCatch(['not found tab', tab], false));
-    }));
-    tabs = tabs.filter(Boolean).filter(tab => !skip.removed.has(tab.id)); // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1396758
-    tabs.forEach(tab => delete tab.groupId); // TODO temp
+    tabs = await getList(tabs.map(extractId));
+    tabs = await Promise.all(tabs.map(tab => Cache.loadTabSession(tab, true, true)));
+    const tabsBeforeMoveMap = new Map(tabs.map(tab => [tab.id, tab]));
 
-    log.assert(lengthBefore === tabs.length, 'tabs length after filter are not equal. not found tabs:',
-        tabIds.filter(tabId => !tabs.some(tab => tab.id === tabId)));
+    let updateOpenerTabIds = moveProperties.windowId && Extensions.hasTreeTabs();
+    const openerTabIds = {};
 
-    log.stop();
-    return tabs;
-}
-
-export async function moveNative(tabs, moveProperties = {}) {
-    let tabIds = tabs.map(extractId),
-        openerTabIds = [];
-
-    const log = logger.start('moveNative', {moveProperties}, tabIds);
-
-    if (moveProperties.windowId) { // try fix bug when tab lose it's openerTabId after moving between windows
-        tabs = await filterExist(tabIds);
-        openerTabIds = tabs.map(tab => tab.openerTabId);
-        tabIds = tabs.map(extractId);
-    } else {
-        tabIds = await filterExist(tabIds, true);
+    if (updateOpenerTabIds) {
+        tabs.forEach(tab => openerTabIds[tab.id] = tab.openerTabId);
+        updateOpenerTabIds = tabs.some(tab => tab.windowId !== moveProperties.windowId);
     }
 
-    if (!tabIds.length) {
-        log.stop('tabs are empty');
-        return [];
-    }
+    tabs = await tabsAction({action: 'move', skipTrackingFlag}, tabs, moveProperties);
 
-    let movedTabs = await browser.tabs.move(tabIds, moveProperties).catch(log.onCatch(['move', tabIds])),
-        movedTabsObj = Utils.arrayToObj(movedTabs, 'id'),
-        movedTabIdsSet = new Set(tabIds);
+    if (updateOpenerTabIds) {
+        log.log('updating openerTabIds...');
 
-    log.stop(tabIds);
-    return tabs
-        .map(function(tab, index) {
-            if (!movedTabIdsSet.has(tab.id)) {
-                return;
-            }
+        const tabIds = tabs.map(extractId);
 
-            if (moveProperties.windowId) {
-                tab.windowId = moveProperties.windowId;
-                // Tabs moved across windows always lose their openerTabId even
-                // if it is also moved to the same window together, thus we need
-                // to restore it manually.
-                // https://github.com/piroor/treestyletab/issues/2546#issuecomment-733488187
-                if (openerTabIds[index] > 0) {
-                    tab.openerTabId = openerTabIds[index];
-                    browser.tabs.update(tab.id, {
-                        openerTabId: tab.openerTabId,
-                    }).catch(() => {});
+        tabs = await Promise.all(tabs.map(async tab => {
+            if (openerTabIds[tab.id] > 0 && tabIds.includes(openerTabIds[tab.id])) {
+                /* Tabs moved across windows always lose their openerTabId even
+                if it is also moved to the same window together, thus we need
+                to restore it manually.
+                https://github.com/piroor/treestyletab/issues/2546#issuecomment-733488187 */
+                try {
+                    [tab] = await tabsAction({action: 'update'}, tab, {
+                        openerTabId: openerTabIds[tab.id],
+                    });
+                } catch {
+                    //
                 }
             }
 
-            if (movedTabsObj[tab.id]) {
-                tab.index = movedTabsObj[tab.id].index;
+            return tab;
+        }));
+    }
+
+    // BUG brorser.session values are lost after moving DISCARDED tabs to ANOTHER window
+    const tabAfterMoveNeedFixing = tabAfterMove => {
+        const tabBeforeMove = tabsBeforeMoveMap.get(tabAfterMove.id);
+        return tabBeforeMove.discarded && tabBeforeMove.windowId !== tabAfterMove.windowId;
+    };
+
+    if (fixSessionAfterMove && tabs.some(tabAfterMoveNeedFixing)) {
+        log.log('fixing session after move...');
+
+        // allSettled is just in case
+        tabs = await Promise.allSettled(tabs.map(async tabAfterMove => {
+            if (!tabAfterMoveNeedFixing(tabAfterMove)) {
+                return tabAfterMove;
             }
 
-            return tab;
-        })
-        .filter(Boolean);
+            Cache.clearTabSessionCache(tabAfterMove.id);
+            tabAfterMove = await Cache.loadTabSession(tabAfterMove, true, true);
+
+            const tabBeforeMove = tabsBeforeMoveMap.get(tabAfterMove.id);
+
+            if (isSame(tabAfterMove, tabBeforeMove, Cache.KEYS)) {
+                return tabAfterMove;
+            }
+
+            tabAfterMove = await Cache.setTabSession(tabAfterMove, tabBeforeMove);
+
+            log.log('session was fixed for discarded tab', tabAfterMove.id);
+
+            return tabAfterMove;
+        }));
+        tabs = tabs.map(({value}) => value).filter(Boolean);
+    }
+
+    // clean session data from tab object to avoid confusion, return only clean data from browser.tabs.move()
+    tabs.forEach(tab => Cache.KEYS.forEach(key => delete tab[key]));
+
+    if (tabs.length !== tabsLengthBefore) {
+        log.stopWarn('some tabs were not moved, before:', tabsLengthBefore, 'after:', tabs.length);
+    } else {
+        log.stop('tabs count:', tabs.length);
+    }
+
+    return tabs;
 }
 
 const tabsActionSchema = new Map([
@@ -1023,28 +1194,31 @@ const tabsActionSchema = new Map([
     ['remove', {sendArray: true, sendOneByOne: true}],
     ['update', {sendOneByOne: true, processGroupId: true}],
     ['reload', {sendOneByOne: true}],
-    ['move', {sendArray: true, processGroupId: true}], // TODO refactor to use it
+    ['move', {sendArray: true, processGroupId: true}],
 ]);
 
 async function tabsAction({action, skipTrackingFlag = false, silentRemove = false}, tabs, ...funcArgs) {
     const schema = tabsActionSchema.get(action);
 
     if (!schema) {
-        throw Error(`invalid action: ${action}`);
+        throw new Error(`invalid action: ${action}`);
     }
 
     if (!tabs) {
-        throw Error(`invalid tabs`);
+        throw new Error(`invalid tabs`);
     }
 
     tabs = Array.isArray(tabs) ? tabs : [tabs];
 
-    if (!tabs.length) {
-        return;
-    }
+    let result = [];
 
     const tabIds = tabs.map(extractId);
-    const log = logger.start(`tabsAction`, {skipTrackingFlag, silentRemove}, `browser.tabs.${action}(`,tabIds,...funcArgs,')');
+    const log = logger.start(tabsAction, `browser.tabs.${action}(`,tabIds,...funcArgs,')', {skipTrackingFlag, silentRemove});
+
+    if (!tabs.length) {
+        log.stop('tabs are empty');
+        return result;
+    }
 
     if (action === 'remove') {
         skipTrackingFlag = true;
@@ -1057,8 +1231,6 @@ async function tabsAction({action, skipTrackingFlag = false, silentRemove = fals
     if (skipTrackingFlag) {
         skipTracking(tabIds); // TODO
     }
-
-    let result = [];
 
     async function sendOneByOne() {
         const settled = await Promise.allSettled(tabIds.map(tabId => {
@@ -1136,8 +1308,8 @@ export async function remove(tabs, silentRemove = false) {
     return await tabsAction({action: 'remove', silentRemove}, tabs);
 }
 
-export async function sendMessage(tabId, message) {
-    message.colorScheme = options.colorScheme;
+export async function sendMessage(tabId, message = {}) {
+    message.colorScheme = settings.colorScheme;
     return browser.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
@@ -1158,7 +1330,7 @@ export function prepareForSaveTab(
     if (includeId && id) {
         tab.id = id;
 
-        if (openerTabId) {
+        if (openerTabId > 0) {
             tab.openerTabId = openerTabId;
         }
     }
@@ -1244,7 +1416,11 @@ export function isCanSendMessage({url}) {
         return true;
     }
 
-    if (url.startsWith('about:') || url.startsWith('moz-extension')) {
+    if (url.startsWith('about:')) {
+        return false;
+    }
+
+    if (url.startsWith('moz-extension') && !url.startsWith(Constants.STG_BASE_URL)) {
         return false;
     }
 
@@ -1264,7 +1440,7 @@ export function isPinned(tab) {
 }
 
 function isCanBeHidden(tab) {
-    return !isPinned(tab) && tab.sharingState && !tab.sharingState.screen && !tab.sharingState.camera && !tab.sharingState.microphone;
+    return !isPinned(tab) && !tab.sharingState?.screen && !tab.sharingState?.camera && !tab.sharingState?.microphone;
 }
 
 export function isCanNotBeHidden(tab) {
@@ -1290,4 +1466,8 @@ export function normalizeFavIcon(tab) {
     }
 
     return tab;
+}
+
+export function isSame(tab1, tab2, keys = ['url', 'cookieStoreId', 'groupId']) {
+    return Utils.isEqualByKeys(tab1, tab2, keys);
 }

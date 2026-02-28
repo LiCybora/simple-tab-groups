@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "Zaznamenávání je povoleno",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "Zaznamenávání akcí doplňku bylo automaticky povoleno z důvodu výskytu chyby doplňku.",

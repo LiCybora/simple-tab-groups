@@ -48,6 +48,8 @@ async function onChangedListener(ext) {
         return;
     }
 
+    await Utils.wait(50);
+
     extensions.length = 0;
     extensions.push(...await load());
 
@@ -188,11 +190,11 @@ function idToUUID(id) {
 }
 
 export function tabsToId(tabs) {
-    replaceTabs(tabs, UUIDtoId);
+    return replaceTabs(tabs, UUIDtoId);
 }
 
 export function tabsToUUID(tabs) {
-    replaceTabs(tabs, idToUUID);
+    return replaceTabs(tabs, idToUUID);
 }
 
 function replaceTabs(tabs, func) {
@@ -202,4 +204,6 @@ function replaceTabs(tabs, func) {
             return `moz-extension://${value}`;
         });
     }
+
+    return tabs;
 }

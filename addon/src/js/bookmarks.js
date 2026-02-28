@@ -6,7 +6,9 @@ import * as Constants from './constants.js';
 import * as Storage from './storage.js';
 import * as Permissions from './permissions.js';
 
-export const {BOOKMARK, FOLDER, SEPARATOR} = browser.bookmarks.BookmarkTreeNodeType;
+// ! BE CAREFUL: "browser.bookmarks" doesn't exist if "bookmarks" is disabled as permission
+
+export const {BOOKMARK, FOLDER, SEPARATOR} = browser.bookmarks?.BookmarkTreeNodeType ?? {};
 
 const logger = new Logger(Constants.MODULES.BOOKMARKS);
 
@@ -139,6 +141,7 @@ export async function exportGroup(group, groupIndex) {
 
     if (!await hasPermission()) {
         log.stop('no permission');
+        return false;
     }
 
     const groupBookmark = await getGroup(group, true);
@@ -152,7 +155,7 @@ export async function exportGroup(group, groupIndex) {
     }
 
     const bookmarks = groupBookmark.children;
-    const bookmarksToSave = new Set;
+    const bookmarksToSave = new Set();
 
     for (const [index, tab] of group.tabs.entries()) {
         tab.title ??= tab.url;
@@ -197,6 +200,7 @@ export async function exportGroups(groups) {
 
     if (!await hasPermission()) {
         log.stop('no permission');
+        return false;
     }
 
     for (const [groupIndex, group] of groups.entries()) {

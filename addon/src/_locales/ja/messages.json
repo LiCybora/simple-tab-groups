@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "ログが有効です",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "アドオン内のエラーのためログが自動的に有効になりました",

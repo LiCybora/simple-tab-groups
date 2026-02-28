@@ -1,36 +1,22 @@
 
 import '/js/prefixed-storage.js';
-import Logger from '/js/logger.js';
+import {objectToNativeError} from '/js/logger.js';
 import * as Constants from '/js/constants.js';
 import * as Utils from '/js/utils.js';
 import * as Messages from '/js/messages.js';
+import * as Cloud from '/js/sync/cloud/cloud.js?context-mixin'; // context-mixin - for unique Broadcast listeners scope. Because on this page Cloud.off() has been called in beforeDestroy() and without context-mixin it will remove listeners into Options page
 
 const MODULE_NAME = 'sync-cloud.mixin';
-const logger = new Logger(MODULE_NAME, [Utils.getNameFromPath(location.href)]);
+// const logger = new Logger(MODULE_NAME, [Utils.getNameFromPath(location.href)]);
 
 const storage = localStorage.create(Constants.MODULES.CLOUD);
 
-const instances = new Set;
-
-const {sendMessageModule} = Messages.connectToBackground(MODULE_NAME, [
-    'sync-start',
-    'sync-progress',
-    'sync-end',
-    'sync-error',
-    'sync-finish',
-], (syncEvent) => {
-    logger.info('got message', syncEvent.action, syncEvent);
-
-    for (const instance of instances) {
-        instance.$emit(syncEvent.action, syncEvent);
-    }
-});
+const {sendMessageModule} = Messages.connectToBackground(MODULE_NAME);
 
 export default {
     data() {
         return {
             syncCloudLastUpdateAgo: null,
-            syncCloudHasError: false,
 
             syncCloudInProgress: false,
             syncCloudProgress: 0,
@@ -38,54 +24,61 @@ export default {
         };
     },
     created() {
-        instances.add(this);
-
         this.syncCloudUpdateInfo();
-        this.syncCloudUpdateInfoTimer = setInterval(() => this.syncCloudUpdateInfo(), 30_000);
 
-        this
-            .$on(['sync-start', 'sync-progress', 'sync-end', 'sync-error', 'sync-finish'], () => {
-                this.syncCloudInProgress = true; // any action means that progress is being made
-                clearTimeout(this.syncCloudProgressTimer);
-                clearTimeout(this.syncCloudInProgressTimer);
-            })
-            .$on('sync-start', () => {
-                this.syncCloudErrorMessage = '';
-            })
-            .$on('sync-progress', ({progress}) => {
-                this.syncCloudProgress = progress;
-            })
-            .$on('sync-end', () => {
-                //
-            })
-            .$on('sync-error', ({name, message}) => {
-                this.syncCloudErrorMessage = `${name}: ${message}`;
-            })
-            .$on('sync-finish', ({ok}) => {
-                const hideProgressMs = ok ? 600 : 5000;
+        Cloud.onSyncUiRequest();
 
-                this.syncCloudProgressTimer = setTimeout(() => this.syncCloudProgress = 0, hideProgressMs);
-                this.syncCloudInProgressTimer = setTimeout(() => this.syncCloudInProgress = false, 500);
+        Cloud.on(['sync-start', 'sync-progress', 'sync-end', 'sync-error', 'sync-finish'], () => {
+            this.syncCloudInProgress = true; // any action means that progress is being made
+            clearTimeout(this.syncCloudUpdateInfoTimer);
+            clearTimeout(this.syncCloudProgressTimer);
+            clearTimeout(this.syncCloudInProgressTimer);
+        });
 
-                this.syncCloudUpdateInfo();
-            });
+        Cloud.on('sync-start', () => {
+            this.syncCloudErrorMessage = '';
+        });
+
+        Cloud.on('sync-progress', ({progress}) => {
+            this.syncCloudProgress = progress;
+        });
+
+        Cloud.on('sync-end', () => {
+            // nothing to do
+        });
+
+        Cloud.on('sync-error', e => {
+            this.syncCloudErrorMessage = String(objectToNativeError(e));
+        });
+
+        Cloud.on('sync-finish', ({ok}) => {
+            this.syncCloudProgressTimer = setTimeout(() => {
+                this.syncCloudProgress = 0;
+            }, ok ? 600 : 5000);
+
+            this.syncCloudInProgressTimer = setTimeout(() => {
+                this.syncCloudInProgress = false;
+            }, 500);
+
+            this.syncCloudUpdateInfo();
+        });
     },
     beforeDestroy() {
-        instances.delete(this);
-        clearInterval(this.syncCloudUpdateInfoTimer);
+        Cloud.off();
+        clearTimeout(this.syncCloudUpdateInfoTimer);
     },
     methods: {
         async syncCloud(trust, revision) {
-            if (!this.syncCloudInProgress) {
-                return await sendMessageModule('BG.cloudSync', false, trust, revision);
-            }
+            return await sendMessageModule('BG.cloudSync', {trust, revision});
         },
         syncCloudUpdateInfo() {
             if (storage.lastUpdate) {
                 this.syncCloudLastUpdateAgo = Utils.relativeTime(storage.lastUpdate);
             }
 
-            this.syncCloudHasError = !!storage.hasError;
+            this.syncCloudErrorMessage = storage.lastError || '';
+
+            this.syncCloudUpdateInfoTimer = setTimeout(() => this.syncCloudUpdateInfo(), 30_000);
         },
     },
 }

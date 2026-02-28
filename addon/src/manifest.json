@@ -154,6 +154,9 @@
         },
         "create-backup": {
             "description": "__MSG_exportAddonSettingsButton__"
+        },
+        "start-cloud-sync": {
+            "description": "__MSG_syncStart__"
         }
     }
 

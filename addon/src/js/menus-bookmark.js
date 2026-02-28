@@ -262,13 +262,30 @@ export async function openInGroup(groupId, info) {
     }
 
     if (tabsToCreate.length) {
-        const {group} = await Groups.load(groupId);
-        const [firstTab] = await Tabs.createMultiple(Groups.setNewTabsParams(tabsToCreate, group));
+        const {group} = await Groups.load(groupId, true);
+
+        for (const tabToCreate of tabsToCreate) {
+            tabToCreate.windowId = group.tabs[0]?.windowId;
+        }
+
+        const newTabIndex = await Tabs.getNewTabIndex(group.tabs);
+        const createdTabs = await Tabs.createMultiple(Groups.setNewTabsParams(tabsToCreate, group), true);
+
+        if (newTabIndex) {
+            await Tabs.moveNative(createdTabs, {index: newTabIndex}, true);
+        }
+
+        if (!Groups.isLoaded(groupId) && !info.button.RIGHT) {
+            log.log('hiding created tabs because group is not loaded and left click');
+            await Tabs.hide(createdTabs, true);
+        }
 
         await Browser.actionLoading(false);
 
+        Tabs.sendGroupUpdated(groupId);
+
         if (info.button.RIGHT) {
-            await self.applyGroup(undefined, groupId, firstTab.id);
+            await self.applyGroup(undefined, groupId, createdTabs[0].id);
         } else {
             // Notification(['tabsCreatedCount', tabsToCreate.length]);
         }
@@ -340,7 +357,9 @@ export async function createNewGroup(info) {
 
             if (tabsToCreate.length) {
                 const newGroup = await Groups.add(undefined, undefined, folder.title);
-                await Tabs.createMultiple(Groups.setNewTabsParams(tabsToCreate, newGroup));
+                const createdTabs = await Tabs.createMultiple(Groups.setNewTabsParams(tabsToCreate, newGroup), true);
+                await Tabs.hide(createdTabs, true);
+                await Tabs.sendGroupUpdated(newGroup.id);
                 groupsCreatedCount++;
             }
         }

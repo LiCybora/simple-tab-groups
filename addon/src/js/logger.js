@@ -6,6 +6,8 @@ import * as Utils from './utils.js';
 import * as Messages from './messages.js';
 import {normalizeArgumentValue, getStack, getFuncName} from './logger-utils.js';
 
+export * from './logger-utils.js';
+
 const prefixGlue = '.'; // ➡️  →
 
 const storage = localStorage.create(Constants.MODULES.LOGGER);
@@ -16,6 +18,15 @@ const logs = [];
 const backgroundConnect = Constants.IS_BACKGROUND_PAGE
     ? null
     : Messages.connectToBackground(Constants.MODULES.LOGGER);
+
+const indentConfig = {
+    indentSymbol: '   ',
+    startSymbol: '▷', // 🔻⚡️
+    stopSymbol: '◁', // 🔺⭕️
+    index: 0,
+    indexByKey: {},
+};
+const scopeActionRegExp = /(START|STOP|SCOPE) (\d+)/;
 
 export default function Logger(prefix, prefixes = []) {
     if (this) { // create new logger with prefix
@@ -223,16 +234,6 @@ function getAction(args) {
     return {action, key, argIndex};
 }
 
-const indentConfig = {
-    indentSymbol: '   ',
-    startSymbol: '▷', // 🔻⚡️
-    stopSymbol: '◁', // 🔺⭕️
-    index: 0,
-    indexByKey: {},
-};
-
-const scopeActionRegExp = /(START|STOP|SCOPE) (\d+)/;
-
 function calcIndent(args) {
     let {action, key} = getAction.call(this, args),
         indentCount = this.index;
@@ -293,7 +294,10 @@ export function clearErrors() {
 export function getLogs() {
     return logs.slice(-5_000);
 }
-
+window.clearLogs = function() {
+    clearLogs();
+    console.clear();
+}; // for tests
 export function clearLogs() {
     logs.length = 0;
 }

@@ -1,6 +1,9 @@
 
+import '/js/prefixed-storage.js';
 import * as Constants from './constants.js';
 import JSON from './json.js';
+
+const mainStorage = localStorage.create(Constants.MODULES.BACKGROUND);
 
 const MAX_STRING_LENGTH = 1024 * 1024 * 0.1; // ~100KB
 
@@ -40,21 +43,59 @@ export function getStack(e, start = 0, to = 50) {
         .slice(start, to);
 }
 
-export function nativeErrorToObj(nativeError) {
+function isSimilarErrorObject(obj) {
+    return obj?.name !== undefined && obj?.message !== undefined;
+}
+
+function isResponseObject(obj) {
+    return obj instanceof Response;
+}
+
+function responseToObject(response) {
+    return {
+        ok: response.ok,
+        type: response.type,
+        status: response.status,
+        statusText: response.statusText,
+        redirected: response.redirected,
+        headers: mainStorage.enableDebug === Constants.DEBUG.MANUAL
+            ? Object.fromEntries(response.headers.entries())
+            : 'deny',
+    };
+}
+
+export function nativeErrorToObject(nativeError) {
+    let cause;
+
+    if (isSimilarErrorObject(nativeError.cause)) {
+        cause = nativeErrorToObject(nativeError.cause);
+    } else if (isResponseObject(nativeError.cause)) {
+        cause = responseToObject(nativeError.cause);
+    } else {
+        cause = nativeError.cause;
+    }
+
     return {
         name: nativeError.name,
         message: nativeError.message,
         fileName: removeUnnecessaryStrings(nativeError.fileName),
         lineNumber: nativeError.lineNumber,
         columnNumber: nativeError.columnNumber,
+        cause: cause,
         stack: getStack(nativeError).join('\n'),
         arguments: nativeError.arguments,
     };
 }
 
-export function objToNativeError(obj) {
-    const error = new Error(obj.message);
-    error.name = obj.name || 'objToNativeError';
+export function objectToNativeError(obj) {
+    const options = {};
+
+    if (obj.cause) {
+        options.cause = isSimilarErrorObject(obj.cause) ? objectToNativeError(obj.cause) : obj.cause;
+    }
+
+    const error = new Error(obj.message, options);
+    error.name = obj.name || 'objectToNativeError';
     error.message = obj.message;
     error.fileName = obj.fileName;
     error.lineNumber = obj.lineNumber;
@@ -75,7 +116,7 @@ export function normalizeError(event) {
         !nativeError.stack?.length
     ) {
         let {stack = ''} = nativeError;
-        nativeError = new Error(JSON.stringify(nativeErrorToObj(nativeError)));
+        nativeError = new Error(JSON.stringify(nativeErrorToObject(nativeError)));
         if (!stack.length) {
             nativeError.stack = stack + `\nFORCE STACK\n` + nativeError.stack;
         }
@@ -83,7 +124,7 @@ export function normalizeError(event) {
 
     return {
         time: (new Date).toISOString(),
-        ...nativeErrorToObj(nativeError),
+        ...nativeErrorToObject(nativeError),
         stack: getStack(nativeError),
     };
 }

@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "loggen is geactiveerd",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "loggen werd automatisch geactiveerd door een fout in de add-on",

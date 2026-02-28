@@ -89,6 +89,10 @@
             vertical-align: middle;
         }
 
+        .time-gap {
+            border-top: 5px solid currentColor;
+        }
+
         code.expanded-on-focus {
             &:focus {
                 white-space: pre-wrap;
@@ -221,6 +225,7 @@
                     :class="['is-relative field log p-1', {
                         'has-background-success-soft indent-line': isHighlighted(log),
                         'has-background-info-soft': isHighlighted(log, true),
+                        'time-gap': hasTimeGap(log, i),
                     }]"
                     :style="{
                         marginLeft: log.indent,

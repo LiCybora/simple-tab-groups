@@ -18,6 +18,7 @@ main {
     margin-inline-start: -150px;
     padding-inline-start: 170px;
     max-width: 700px;
+    min-height: 150px;
 }
 
 @media only screen and (max-width: 1300px) {

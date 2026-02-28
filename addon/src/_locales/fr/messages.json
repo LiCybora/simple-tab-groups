@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "la journalisation est activée",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "la journalisation a été activée automatiquement en raison d'une erreur dans l'extension",

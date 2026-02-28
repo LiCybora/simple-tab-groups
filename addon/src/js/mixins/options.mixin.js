@@ -73,7 +73,7 @@ export default {
         },
         optionsWatch(key, func, watchOptions = {}) {
             if (key.includes('.')) {
-                throw Error('only root level option keys supported');
+                throw new Error('only root level option keys supported');
             }
 
             const unwatch = this.$watch(`options.${key}`, async (...args) => {

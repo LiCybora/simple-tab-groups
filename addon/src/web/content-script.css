@@ -87,6 +87,7 @@
                 outline: none;
                 overflow: hidden;
                 border: 0;
+                transition: none;
 
                 &:not([disabled]):hover,
                 &:not([disabled]):focus {

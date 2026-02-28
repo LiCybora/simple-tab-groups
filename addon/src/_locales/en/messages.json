@@ -401,6 +401,10 @@
         "message": "Reload all tabs in current group",
         "description": "Reload all tabs in current group"
     },
+    "hotkeyActionTitleStartCloudSync": {
+        "message": "__MSG_syncStart__",
+        "description": "Start synchronization"
+    },
     "whatsWrongMessage": {
         "message": "What's wrong...\nPlease notify the developer by support email with last error logs (button exists at the bottom of the Options page)\nClick here to continue...",
         "description": "Whats wrong...\nPlease contact with developer by support email with last error logs (exist button at bottom of options)"
@@ -890,8 +894,8 @@
         "description": "Disable DEBUG"
     },
     "loggingIsEnabledTitle": {
-        "message": "logging is enabled",
-        "description": "logging is enabled"
+        "message": "logging enabled",
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "logging was auto-enabled due to an error in addon",
@@ -1369,6 +1373,10 @@
         "message": "Last update",
         "description": "Last update/active relative time"
     },
+    "syncIsDisabled": {
+        "message": "Synchronization is disabled",
+        "description": "Synchronization is disabled"
+    },
     "syncStart": {
         "message": "Start synchronization",
         "description": "Start synchronization"
@@ -1392,6 +1400,16 @@
     "syncSettingsLocation": {
         "message": "Sync settings location",
         "description": "Enable auto backup to the cloud"
+    },
+    "syncProgressTitle": {
+        "message": "Synchronization... $percent$%",
+        "description": "Synchronization browser button title",
+        "placeholders": {
+            "percent": {
+                "content": "$1",
+                "example": "25"
+            }
+        }
     },
     "githubSecretTitle": {
         "message": "Secret",
@@ -1432,6 +1450,16 @@
             "relativeTime": {
                 "content": "$1",
                 "example": "in 28 minutes"
+            }
+        }
+    },
+    "githubContentsTooLarge": {
+        "message": "Synchronization via GitHub API is not possible due to excessive data volume: $dataSize$.\nReduce the number of tabs or disable tab icon synchronization.",
+        "description": "Contents are too large and cannot be saved via GitHub API",
+        "placeholders": {
+            "dataSize": {
+                "content": "$1",
+                "example": "100 MB"
             }
         }
     },
@@ -1510,11 +1538,11 @@
         "description": "How set up gist, write token to the STG settings"
     },
     "helpPageHowToGithubGistSave": {
-        "message": "Click the \"Save settings\" button",
+        "message": "Click the \"__MSG_saveSettings__\" button",
         "description": "How set up gist, click save"
     },
     "helpPageHowToGithubGistStartSync": {
-        "message": "Click the \"Start synchronization\" button",
+        "message": "Click the \"__MSG_syncStart__\" button",
         "description": "How set up gist, click sync"
     },
     "helpPageHowToGithubGistHowCreatePersonalToken": {

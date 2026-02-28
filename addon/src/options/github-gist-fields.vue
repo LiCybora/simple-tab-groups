@@ -15,7 +15,7 @@ export default {
             type: String,
             required: true,
         },
-        error: {
+        errorMessage: {
             type: String,
             default: '',
         },
@@ -63,15 +63,12 @@ export default {
                 this.tokenLoading = true;
                 this.tokenCheched = null;
 
-                const GithubGistCloud = new GithubGist(this.token, 'check-token');
-
-                await GithubGistCloud.checkToken();
+                await new GithubGist(this.token, 'check-token').checkToken();
 
                 this.tokenCheched = true;
-                this.$emit('update:error', '');
             } catch ({message}) {
                 this.tokenCheched = false;
-                this.$emit('update:error', new CloudError(message).toString());
+                this.$emit('update:errorMessage', String(new CloudError(message)));
             } finally {
                 this.tokenLoading = false;
             }
@@ -150,14 +147,14 @@ export default {
             </div>
         </div>
     </div>
-    <div class="field error-field">
-        <p class="has-text-danger has-text-right" v-text="error"></p>
+    <div class="field error-message">
+        <p class="has-text-danger has-text-right white-space-pre-line" v-text="errorMessage"></p>
     </div>
 </div>
 </template>
 
 <style scoped>
-.error-field {
+.error-message {
     min-height: 1.5em;
 }
 </style>

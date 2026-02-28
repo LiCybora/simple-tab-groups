@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "已啟用除錯紀錄",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "因附加元件發生錯誤，已自動啟用除錯紀錄",

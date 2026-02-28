@@ -883,7 +883,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "Налагодження включене",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "налагодження було автоматично включене з за помилки в аддоні",
@@ -1361,6 +1361,10 @@
         "message": "Останнє оновлення",
         "description": "Last update/active relative time"
     },
+    "syncIsDisabled": {
+        "message": "Синхронізація вимкнена",
+        "description": "Synchronization is disabled"
+    },
     "syncStart": {
         "message": "Синхронізувати",
         "description": "Start synchronization"
@@ -1502,11 +1506,11 @@
         "description": "How set up gist, write token to the STG settings"
     },
     "helpPageHowToGithubGistSave": {
-        "message": "Натисніть кнопку \"Зберегти налаштування\"",
+        "message": "Натисніть кнопку \"__MSG_saveSettings__\"",
         "description": "How set up gist, click save"
     },
     "helpPageHowToGithubGistStartSync": {
-        "message": "Натисніть кнопку \"Синхронізувати\"",
+        "message": "Натисніть кнопку \"__MSG_syncStart__\"",
         "description": "How set up gist, click sync"
     },
     "helpPageHowToGithubGistHowCreatePersonalToken": {

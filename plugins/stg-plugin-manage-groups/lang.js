@@ -164,7 +164,7 @@ export default function Lang(messageName, data = {}, extra = {html: PARAMS_FORMA
 
 export function translate(node) {
     if (!(node instanceof Element)) {
-        throw Error('Only HTML nodes are supported!');
+        throw new Error('Only HTML nodes are supported!');
     }
 
     // translate messages into node text

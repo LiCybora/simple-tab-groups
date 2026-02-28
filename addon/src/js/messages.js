@@ -1,7 +1,7 @@
 
 import * as Constants from './constants.js';
 import JSON from './json.js';
-import {nativeErrorToObj, objToNativeError, PageStack} from './logger-utils.js';
+import {nativeErrorToObject, objectToNativeError, PageStack} from './logger.js';
 
 const CSPorts = new Set;
 const pending = new Map;
@@ -37,7 +37,7 @@ function getArgumentsModuleCall(ModuleFunc, ...args) {
         ModuleFunc,
         {
             args,
-            breadcrumbs: nativeErrorToObj(new PageStack),
+            breadcrumbs: nativeErrorToObject(new PageStack),
         }
     ];
 }
@@ -58,7 +58,7 @@ export function connectToBackground(name, listeners = null, callback = null, aut
             const {resolve, reject} = popPending(postId);
 
             if (error) {
-                reject(objToNativeError(error));
+                reject(objectToNativeError(error));
             } else {
                 resolve(result);
             }
@@ -148,7 +148,7 @@ export function createListenerOnConnectedBackground(onMessageListener) {
                 if (CSPorts.has(CSPort)) {
                     port.postMessage({
                         postId,
-                        error: nativeErrorToObj(error),
+                        error: nativeErrorToObject(error),
                     });
                 } else {
                     popPending(postId);
@@ -165,7 +165,7 @@ export function createListenerOnConnectedBackground(onMessageListener) {
 
 export function sendMessageFromBackground(...args) {
     if (!Constants.IS_BACKGROUND_PAGE) {
-        throw Error('not background');
+        throw new Error('not background');
     }
 
     const message = normalizeSendData(...args);

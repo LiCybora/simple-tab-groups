@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "zapisywanie zdarzeń w dzienniku jest włączone",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "zapisywanie zdarzeń w dzienniku zostało automatycznie włączone z powodu błędu w rozszerzeniu",

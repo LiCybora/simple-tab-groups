@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{iconSize | 16}" height="{iconSize | 16}" viewBox="0 0 {iconSize | 16} {iconSize | 16}" style="color-scheme: light dark;">
+    <style>
+        circle {
+            fill: transparent;
+            stroke: {color | context-fill light-dark(#5b5b66,#fbfbfe)};
+            stroke-width: {strokeWidth | 2};
+            stroke-linecap: round;
+            /* circumference: 2 * Math.PI * r = 2 * 3.14159 * {radius | 7} = ~43.982 */
+            stroke-dasharray: {dasharray | 43.982};
+            stroke-dashoffset: {offset | 43.982}; /* from 43.982 (0%) to 0 (100%) */
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+        }
+    </style>
+    <circle cx="{iconSizeHalf | 8}" cy="{iconSizeHalf | 8}" r="{radius | 7}" />
+</svg>

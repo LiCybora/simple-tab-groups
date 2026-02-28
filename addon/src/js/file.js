@@ -8,7 +8,7 @@ const logger = new Logger('File');
 
 export async function load(accept = '*/*', readAs = 'text') { // readAs: text, url
     if (!['text', 'url'].includes(readAs)) {
-        throw Error('wrong readAs parameter');
+        throw new Error('wrong readAs parameter');
     }
 
     const {promise, resolve, reject} = Promise.withResolvers();

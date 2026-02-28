@@ -795,7 +795,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "logging diaktifkan",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "logging diaktifkan secara otomatis karena kesalahan pada addon",

@@ -11,11 +11,10 @@ export default class GithubGist {
     #gistId = null;
 
     #perPage = null; // max = 100
-    #throwOnceUnknownResponse = false;
 
     constructor(token, fileName, perPage = 30) {
         if (!token) {
-            throw new Error('githubInvalidToken');
+            throw new Error('githubInvalidToken', {cause: {isEmpty: true}});
         } else if (!fileName) {
             throw new Error('githubInvalidFileName');
         } else if (perPage < 1 || perPage > 100) {
@@ -52,10 +51,9 @@ export default class GithubGist {
 
     async checkToken() {
         try {
-            this.#throwOnceUnknownResponse = true;
             await this.#request('POST', this.#mainUrl);
         } catch (e) {
-            if (e.status === 422) {
+            if (e.cause?.status === 422) {
                 return true;
             }
 
@@ -95,7 +93,7 @@ export default class GithubGist {
         this.hasGist || await this.#findGist();
 
         if (!this.hasGist) {
-            throw Error('githubNotFound');
+            throw new Error('githubNotFound');
         }
 
         let gistUrl = this.#gistUrl;
@@ -130,7 +128,7 @@ export default class GithubGist {
             return withInfo ? [content, gist] : content;
         } catch (e) {
             if (e instanceof SyntaxError) {
-                throw Error('githubInvalidGistContent');
+                throw new Error('githubInvalidGistContent', {cause: e});
             }
 
             throw e;
@@ -170,7 +168,7 @@ export default class GithubGist {
         this.hasGist || await this.#findGist();
 
         if (!this.hasGist) {
-            throw Error('githubNotFound');
+            throw new Error('githubNotFound');
         }
 
         const gist = await this.#request('PATCH', this.#gistUrl, {
@@ -185,13 +183,6 @@ export default class GithubGist {
     }
 
     async #request(method, url, body = null, options = {}, progressFunc = null) {
-        const throwOnceUnknownResponse = this.#throwOnceUnknownResponse;
-        this.#throwOnceUnknownResponse = false;
-
-        if (!this.#token) {
-            throw Error('githubInvalidToken');
-        }
-
         const isApi = url.startsWith(GithubGist.apiUrl);
 
         options.method = method;
@@ -199,7 +190,7 @@ export default class GithubGist {
 
         if (isApi) {
             Object.assign(options.headers, GithubGist.defaultHeaders);
-            options.headers.Authorization = `token ${this.#token}`;
+            options.headers.Authorization = `Bearer ${this.#token}`;
         }
 
         if (options.method === 'GET') {
@@ -221,31 +212,23 @@ export default class GithubGist {
         const response = await this.#progressFetch(url, options, progressFunc);
 
         if (response.ok) {
-            if (options.method !== 'GET') {
-                delete storage.hasError;
-            }
-
             return response.json();
-        }
-
-        if (!throwOnceUnknownResponse) {
-            storage.hasError = true;
         }
 
         if (isApi) {
             const classicScopes = response.headers.get('x-oauth-scopes');
             if (classicScopes && !classicScopes.includes('gist')) {
-                throw Error('githubTokenNoAccess');
+                throw new Error('githubTokenNoAccess');
             }
 
             // const personalScopes = response.headers.get('x-accepted-github-permissions');
             // if (personalScopes && !personalScopes.includes('gists=write')) {
-            //     throw Error('githubTokenNoAccess');
+            //     throw new Error('githubTokenNoAccess');
             // }
         }
 
         if (response.status === 401) {
-            throw Error('githubInvalidToken');
+            throw new Error('githubInvalidToken');
         }
 
         if (response.status === 403) {
@@ -254,20 +237,28 @@ export default class GithubGist {
                 throw new Error(`githubRateLimit:${unix}000`);
             }
 
-            throw Error('githubTokenNoAccess');
+            throw new Error('githubTokenNoAccess');
         }
 
         if (response.status === 404) {
-            throw Error('githubNotFound');
+            throw new Error('githubNotFound');
         }
 
-        if (throwOnceUnknownResponse) {
-            throw response;
+        const result = await response.clone().json();
+        const errors = result.errors?.map(err => err.message) ?? [];
+        const errorsMessage = errors.length ? `. Errors: ${errors.join(', ')}` : '';
+
+        if (response.status === 422) {
+            if (['contents', 'large'].every(s => errorsMessage.includes(s))) {
+                const bytes = Object.values(body.files)
+                    .map(file => Utils.encodeToBytes(file.content).length)
+                    .reduce((acc, fSize) => acc + fSize, 0);
+
+                throw new Error(`githubContentsTooLarge:${bytes}`);
+            }
         }
 
-        const result = await response.json();
-
-        throw Error(`${response.status}: ${result.message}`);
+        throw new Error(`${response.status}: ${result.message}${errorsMessage}`, {cause: response});
     }
 
     #createProgress(currentProgress, progressDuration, progressFunc = null) {

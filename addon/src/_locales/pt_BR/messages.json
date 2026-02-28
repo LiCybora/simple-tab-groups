@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "O log de dados está habilitado",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "o registro foi ativado automaticamente devido a um erro no complemento,",

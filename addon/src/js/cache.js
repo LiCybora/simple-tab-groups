@@ -4,6 +4,11 @@ import * as Constants from './constants.js';
 import * as Utils from './utils.js';
 import backgroundSelf from './background.js';
 
+export const GROUP_KEY = 'groupId';
+export const FAVICON_KEY = 'favIconUrl';
+export const THUMBNAIL_KEY = 'thumbnail';
+export const KEYS = [GROUP_KEY, FAVICON_KEY, THUMBNAIL_KEY];
+
 export const tabs = {};
 export const lastTabsState = {}; // BUG https://bugzilla.mozilla.org/show_bug.cgi?id=1818392
 export const windows = {};
@@ -74,7 +79,7 @@ async function loadTabGroup(id) {
             return tabs[id].groupId;
         }
 
-        return tabs[id].groupId = await addPromise(tabs[id], browser.sessions.getTabValue(id, 'groupId'));
+        return tabs[id].groupId = await addPromise(tabs[id], browser.sessions.getTabValue(id, GROUP_KEY));
     }
 }
 
@@ -86,7 +91,7 @@ export async function setTabGroup(id, groupId = null, windowId = null) {
 
         await waitPromises(tabs[id]);
 
-        await addPromise(tabs[id], browser.sessions.setTabValue(id, 'groupId', groupId));
+        await addPromise(tabs[id], browser.sessions.setTabValue(id, GROUP_KEY, groupId));
 
         tabs[id].groupId = groupId;
     } else if (getTabGroup(id)) {
@@ -100,7 +105,7 @@ export function getTabGroup(id) {
 
 export async function removeTabGroup(id) {
     await waitPromises(tabs[id]);
-    await addPromise(tabs[id], browser.sessions.removeTabValue(id, 'groupId'));
+    await addPromise(tabs[id], browser.sessions.removeTabValue(id, GROUP_KEY));
     delete tabs[id]?.groupId;
 }
 
@@ -113,7 +118,7 @@ async function loadTabFavIcon(id) {
             return tabs[id].favIconUrl;
         }
 
-        return tabs[id].favIconUrl = await addPromise(tabs[id], browser.sessions.getTabValue(id, 'favIconUrl'));
+        return tabs[id].favIconUrl = await addPromise(tabs[id], browser.sessions.getTabValue(id, FAVICON_KEY));
     }
 }
 
@@ -123,7 +128,7 @@ export async function setTabFavIcon(id, favIconUrl) {
 
         await waitPromises(tabs[id]);
 
-        await addPromise(tabs[id], browser.sessions.setTabValue(id, 'favIconUrl', favIconUrl));
+        await addPromise(tabs[id], browser.sessions.setTabValue(id, FAVICON_KEY, favIconUrl));
 
         tabs[id].favIconUrl = favIconUrl;
     }
@@ -135,7 +140,7 @@ export function getTabFavIcon(id) {
 
 export async function removeTabFavIcon(id) {
     await waitPromises(tabs[id]);
-    await addPromise(tabs[id], browser.sessions.removeTabValue(id, 'favIconUrl'));
+    await addPromise(tabs[id], browser.sessions.removeTabValue(id, FAVICON_KEY));
     delete tabs[id]?.favIconUrl;
 }
 
@@ -152,7 +157,7 @@ async function loadTabThumbnail(id) {
             return tabs[id].thumbnail;
         }
 
-        return tabs[id].thumbnail = await addPromise(tabs[id], browser.sessions.getTabValue(id, 'thumbnail'));
+        return tabs[id].thumbnail = await addPromise(tabs[id], browser.sessions.getTabValue(id, THUMBNAIL_KEY));
     }
 }
 
@@ -166,7 +171,7 @@ export async function setTabThumbnail(id, thumbnail) {
 
         await waitPromises(tabs[id]);
 
-        await addPromise(tabs[id], browser.sessions.setTabValue(id, 'thumbnail', thumbnail));
+        await addPromise(tabs[id], browser.sessions.setTabValue(id, THUMBNAIL_KEY, thumbnail));
 
         tabs[id].thumbnail = thumbnail;
     }
@@ -178,7 +183,7 @@ export function getTabThumbnail(id) {
 
 export async function removeTabThumbnail(id) {
     await waitPromises(tabs[id]);
-    await addPromise(tabs[id], browser.sessions.removeTabValue(id, 'thumbnail'));
+    await addPromise(tabs[id], browser.sessions.removeTabValue(id, THUMBNAIL_KEY));
     delete tabs[id]?.thumbnail;
 }
 
@@ -222,6 +227,12 @@ export async function setTabSession(tab, session = null) {
     ]);
 
     return tab;
+}
+
+export function clearTabSessionCache(id) {
+    delete tabs[id]?.groupId;
+    delete tabs[id]?.favIconUrl;
+    delete tabs[id]?.thumbnail;
 }
 
 export function applySession(toObj, fromObj) {
@@ -273,7 +284,7 @@ export async function setWindowGroup(id, groupId) {
 
     await waitPromises(windows[id]);
 
-    await addPromise(windows[id], browser.sessions.setWindowValue(id, 'groupId', groupId));
+    await addPromise(windows[id], browser.sessions.setWindowValue(id, GROUP_KEY, groupId));
 
     windows[id].groupId = groupId;
 }
@@ -296,7 +307,7 @@ export function removeWindow(id) {
 
 export async function removeWindowGroup(id) {
     await waitPromises(windows[id]);
-    await addPromise(windows[id], browser.sessions.removeWindowValue(id, 'groupId'));
+    await addPromise(windows[id], browser.sessions.removeWindowValue(id, GROUP_KEY));
     delete windows[id].groupId;
 }
 
@@ -308,7 +319,7 @@ export async function loadWindowSession(win) {
 
         await waitPromises(windows[id]);
 
-        windows[id].groupId = win.groupId = await addPromise(windows[id], browser.sessions.getWindowValue(id, 'groupId'));
+        windows[id].groupId = win.groupId = await addPromise(windows[id], browser.sessions.getWindowValue(id, GROUP_KEY));
 
         return win; // TODO check in stg-debug.js and others
     } catch {

@@ -9,6 +9,18 @@
     const contentUrlPrefix = `https://raw.githubusercontent.com/${USER_NAME}/${REPOSITORY}/`;
     const MSG_REGEXP = /(?:(html|text):\s*)?__MSG_(\w+?)__/gm;
 
+    const notAllowedKeys = [
+        'branch',
+        'component',
+        'locale',
+        'version',
+        'polyglot',
+        'extensionName',
+        'stgHostName',
+        'STGextensionName',
+        'hotkeyActionTitleStartCloudSync',
+    ];
+
     function notify(body, title = document.title) {
         new window.Notification(title, {
             body: body,
@@ -18,24 +30,24 @@
 
     async function load(url, defaultValue = {}) {
         try {
-            const blob = await fetch(url);
+            const response = await fetch(url);
 
-            if (!blob.ok) {
-                notify(`GitHub error: ${blob.status} ${blob.statusText}. Please wait a few minutes and try again.\n${result.message}`);
-                throw blob;
+            if (!response.ok) {
+                notify(`GitHub error: ${response.status} ${response.statusText}. Please wait a few minutes and try again.`);
+                throw response;
             }
 
-            return await blob.json();
+            return await response.json();
         } catch {
             return defaultValue;
         }
     }
 
-    new Vue({
+    new window.Vue({
         el: '#content',
         data: {
             isAdmin: !!localStorage.isAdmin,
-            notAllowedKeys: ['branch', 'component', 'locale', 'version', 'polyglot', 'extensionName', 'stgHostName', 'STGextensionName'],
+            notAllowedKeys,
 
             branchesLoading: true,
             branches: [],

@@ -160,9 +160,9 @@ async function openTab(url, cookieStoreId = Constants.DEFAULT_COOKIE_STORE_ID, b
             });
 
             if (!result) {
-                throw Error('unknown error');
+                throw new Error('unknown error');
             } else if (!result.ok) {
-                throw Error(result.error);
+                throw new Error(result.error);
             }
         }
 
@@ -172,9 +172,9 @@ async function openTab(url, cookieStoreId = Constants.DEFAULT_COOKIE_STORE_ID, b
             });
 
             if (!result) {
-                throw Error('unknown error');
+                throw new Error('unknown error');
             } else if (!result.ok) {
-                throw Error(result.error);
+                throw new Error(result.error);
             }
         }
 

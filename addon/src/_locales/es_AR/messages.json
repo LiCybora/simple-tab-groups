@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "está activado el loggeo",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "el loggeo fue activado automáticamente debido a un error en la extensión",

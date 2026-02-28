@@ -823,7 +823,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "Die Fehlerprotokollierung ist aktiviert",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "Die Fehlerprotokollierung wurden wegen eines Fehlers im Add-On automatisch aktiviert",

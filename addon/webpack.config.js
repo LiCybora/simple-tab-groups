@@ -111,6 +111,9 @@ export default {
                 'js',
                 'background.js',
 
+                // css
+                'web/content-script.css',
+
                 // pages
                 'popup/popup.html',
                 'manage/manage.html',

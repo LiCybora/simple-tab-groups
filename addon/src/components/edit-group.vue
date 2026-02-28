@@ -51,6 +51,7 @@ export default {
         this.GROUP_ICON_VIEW_TYPES = Constants.GROUP_ICON_VIEW_TYPES;
         this.TITLE_VARIABLES = {
             uid: '{uid}',
+            index: '6',
             ...Utils.DATE_LOCALE_VARIABLES,
         };
 
@@ -137,6 +138,8 @@ export default {
         if (newGroup.exportToBookmarks) {
             newGroup.exportToBookmarks = this.permissions.bookmarks;
         }
+
+        this.TITLE_VARIABLES.index = String(groups.length);
 
         this.$set(this, 'group', JSON.clone(newGroup));
 

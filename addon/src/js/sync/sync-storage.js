@@ -31,7 +31,7 @@ function chunkStr(str, size) {
 
 export async function get(key) {
     if (!IS_AVAILABLE) {
-        throw Error('Browser sync is not available');
+        throw new Error('Browser sync is not available');
     }
 
     let data = await browser.storage.sync.get(getAllChunkKeys(key)),
@@ -48,7 +48,7 @@ export async function get(key) {
 
 export async function set(key, data) {
     if (!IS_AVAILABLE) {
-        throw Error('Browser sync is not available');
+        throw new Error('Browser sync is not available');
     }
 
     let bin = {},

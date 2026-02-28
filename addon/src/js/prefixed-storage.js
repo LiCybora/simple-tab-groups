@@ -29,10 +29,10 @@ function createProxy(storage, prefix, delimiter = '/') {
             } else if (prop === 'clear') {
                 return (withSubStorages = false) => {
                     if (withSubStorages) { // remove all with sub-storages, all keys which starts with prefix/
-                        const prefix = getKey();
+                        const prefixKey = getKey();
 
                         for (const key of Reflect.ownKeys(target)) {
-                            if (key.startsWith(prefix)) {
+                            if (key.startsWith(prefixKey)) {
                                 Reflect.deleteProperty(target, key);
                             }
                         }

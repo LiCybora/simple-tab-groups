@@ -122,7 +122,7 @@ export async function create(createProperties) {
 export async function createSeparator(parentId) {
     return create({
         parentId,
-        type: browser.menus.ItemType.SEPARATOR,
+        type: ItemType.SEPARATOR,
     });
 }
 

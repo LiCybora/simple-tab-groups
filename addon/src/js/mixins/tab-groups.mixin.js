@@ -36,7 +36,6 @@ export default {
     data() {
         self.app = this;
 
-        this.offListeners = new Set();
         this.sendMessage = sendMessage;
         this.sendMessageModule = sendMessageModule;
 
@@ -136,9 +135,11 @@ export default {
         groupTabsCountMessage: Groups.tabsCountMessage,
 
         tabGroupsSetupListeners() {
-            this.offListeners.add(Containers.onChanged(() => this.onChangedContainers()));
+            const offListeners = new Set();
 
-            this.$on('window-closed', () => this.loadWindows());
+            offListeners.add(Containers.onChanged(() => this.onChangedContainers()));
+
+            Windows.on(['opened', 'closed'], () => this.loadWindows());
 
             Tabs.on('updated', ({tabId, changeInfo}) => {
                 const tab = this.allTabs[tabId] ?? this.unSyncTabs.find(tab => tab.id === tabId);
@@ -194,9 +195,10 @@ export default {
             this.$on('lock-addon', () => {
                 this.isLoading = true;
                 disconnect();
+                Windows.off();
                 Tabs.off();
-                this.offListeners.forEach(off => off());
-                this.offListeners.clear();
+                offListeners.forEach(off => off());
+                offListeners.clear();
             });
         },
         onChangedContainers() {

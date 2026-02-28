@@ -15,6 +15,8 @@ export const DEBUG = Object.freeze({
     AUTO: 'auto',
 });
 
+export const MAX_URL_BYTE_LENGTH = 1048576 - 4; // 1MB - 4 byte (don't know why it's 4 bytes smaller)
+
 export const ACTIVE_SYMBOL = '〇';
 export const DISCARDED_SYMBOL = '✱';
 export const STICKY_SYMBOL = '📌';
@@ -68,6 +70,7 @@ export const PAGES = Object.freeze({
         OPEN_IN_CONTAINER: browser.runtime.getURL('help/open-in-container.html'),
         HOWTO_GITHUB_GIST: browser.runtime.getURL('help/how-to-github-gist.html'),
         UNSUPPORTED_URL: browser.runtime.getURL('help/stg-unsupported-url.html'),
+        DUMMY: browser.runtime.getURL('help/dummy.html'),
         DEBUG: browser.runtime.getURL('help/stg-debug.html'),
         REINSTALL: browser.runtime.getURL('help/db-error-reinstall.html'),
     },
@@ -146,6 +149,7 @@ export const HOTKEY_ACTIONS = Object.freeze([
     'discard-group',
     'discard-other-groups',
     'reload-all-tabs-in-current-group',
+    'start-cloud-sync',
 ]);
 
 export const HOTKEY_ACTIONS_WITH_CUSTOM_GROUP = Object.freeze([

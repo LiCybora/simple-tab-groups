@@ -229,6 +229,8 @@ export async function add(windowId, tabIds = [], title = null) {
 
     groups.push(newGroup);
 
+    newGroup.title = Utils.format(newGroup.title, {index: groups.length});
+
     await save(groups);
 
     if (windowId) {
@@ -332,6 +334,8 @@ const RESTORE_GROUP_PREFIX = 'restore-group-';
 async function addUndoRemove(groupToRemove) {
     const restoreId = RESTORE_GROUP_PREFIX + groupToRemove.id;
 
+    groupToRemove.tabs = Tabs.prepareForSave(groupToRemove.tabs, false, true, true);
+
     await browser.storage.session.set({
         [restoreId]: groupToRemove,
     });
@@ -385,6 +389,7 @@ export async function restore(groupId) {
     if (tabs.length && !group.isArchive) {
         await Browser.actionLoading();
         group.tabs = await Tabs.createMultiple(setNewTabsParams(tabs, group), true);
+        await Tabs.hide(group.tabs, true);
         await Browser.actionLoading(false);
     }
 
@@ -416,7 +421,7 @@ export async function update(groupId, updateData) {
         return;
     }
 
-    const {group, groups} = await load(groupId);
+    const {group, groupIndex, groups} = await load(groupId);
 
     if (!group) {
         log.throwError(['group', groupId, 'not found for update it']);
@@ -427,6 +432,7 @@ export async function update(groupId, updateData) {
     if (updateDataKeys.has('title')) {
         const {defaultGroupProps} = await getDefaults();
         updateData.title = createTitle(updateData.title, groupId, defaultGroupProps).slice(0, 256);
+        updateData.title = Utils.format(updateData.title, {index: groupIndex + 1});
     }
 
     Object.assign(group, updateData);
@@ -623,7 +629,8 @@ export async function archiveToggle(groupId) {
 
         Extensions.tabsToUUID(group.tabs);
 
-        await Tabs.createMultiple(setNewTabsParams(group.tabs, group), true);
+        const createdTabs = await Tabs.createMultiple(setNewTabsParams(group.tabs, group), true);
+        await Tabs.hide(createdTabs, true);
 
         group.tabs = [];
     } else {

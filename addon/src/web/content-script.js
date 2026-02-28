@@ -1,5 +1,4 @@
 
-import './select-group.css';
 import {isValidHotkeyEvent, eventToHotkeyValue, NOT_SUPPORTED_CODE_KEYS} from '../js/hotkeys.js'; // ../js/ is required
 
 const POPUP_ID = 'stg-select-group-dialog';

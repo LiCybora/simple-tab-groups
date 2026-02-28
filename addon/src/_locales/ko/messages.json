@@ -783,7 +783,7 @@
     },
     "loggingIsEnabledTitle": {
         "message": "로깅 활성화",
-        "description": "logging is enabled"
+        "description": "logging enabled"
     },
     "loggingIsAutoEnabledTitle": {
         "message": "확장 프로그램의 오류로 인해 로깅이 자동으로 활성화됨",

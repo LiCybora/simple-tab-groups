@@ -1,11 +1,17 @@
 
+import './polyfills.js';
 import * as Constants from './constants.js';
 import JSON from './json.js';
 
 export const INNER_HTML = 'innerHTML';
+const encoder = new TextEncoder();
 
 export function unixNow() {
     return Math.floor(Date.now() / 1000);
+}
+
+export function encodeToBytes(str) {
+    return encoder.encode(str);
 }
 
 export function type(obj) {
@@ -111,6 +117,53 @@ export function isPrimitive(value) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
 } */
 
+export function formatBytes(bytes, decimals = 2, locale = UI_LANG) {
+    // if (bytes === 0) return '0 Bytes';
+    // if (bytes < 0 || !Number.isFinite(bytes)) throw new RangeError('Bytes must be a non-negative finite number');
+
+    // const k = 1024;
+    // const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    // const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    // const formatter = new Intl.NumberFormat(locale, {
+    //     minimumFractionDigits: decimals,
+    //     maximumFractionDigits: decimals,
+    // });
+
+    // const value = bytes / k ** i;
+    // return `${formatter.format(value)} ${sizes[i]}`;
+
+    if (bytes < 0 || !Number.isFinite(bytes)) {
+        throw new RangeError('Bytes must be a non-negative finite number');
+    }
+
+    if (bytes === 0) {
+        const formatter = new Intl.NumberFormat(locale, {
+            style: 'unit',
+            unit: 'byte',
+            unitDisplay: 'short',
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        });
+        return formatter.format(0);
+    }
+
+    const k = 1024;
+    const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte', 'petabyte', 'exabyte', 'zettabyte', 'yottabyte'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const value = bytes / (k ** i);
+
+    const formatter = new Intl.NumberFormat(locale, {
+        style: 'unit',
+        unit: units[i],
+        unitDisplay: 'short',
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    });
+
+    return formatter.format(value);
+};
+
 export function safeHtml(html) {
     const div = document.createElement('div');
     div.textContent = html ?? '';
@@ -124,7 +177,7 @@ export function unSafeHtml(html) {
 }
 
 export function base64Encode(str) {
-    const bytes = new TextEncoder().encode(str);
+    const bytes = encodeToBytes(str);
     return btoa(String.fromCodePoint(...bytes));
 }
 
@@ -138,7 +191,7 @@ export function sliceText(text, length = 50) {
 }
 
 export async function sha256Hex(str) {
-    const data = new TextEncoder().encode(str);
+    const data = encodeToBytes(str);
     const hashBuffer = await self.crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -182,15 +235,20 @@ export function isAvailableFavIconUrl(favIconUrl) {
     return true;
 }
 
-const createTabUrlRegexp = /^((http|moz-extension|view-source)|about:blank)/,
-    emptyUrlsArray = new Set(['about:blank', 'about:newtab', 'about:home']);
-
+const emptyUrls = new Set(['about:blank', 'about:newtab', 'about:home']);
 export function isUrlEmpty(url) {
-    return emptyUrlsArray.has(url);
+    return emptyUrls.has(url);
 }
 
+const allowCreateUrlRegexp = /^((http|moz-extension|view-source)|about:blank)/;
 export function isUrlAllowToCreate(url) {
-    return createTabUrlRegexp.test(url);
+    return allowCreateUrlRegexp.test(url);
+}
+
+export function isUrlLengthValid(url, out = {}) {
+    out.byteLength = encodeToBytes(url).length;
+    out.maxByteLength = Constants.MAX_URL_BYTE_LENGTH;
+    return out.byteLength <= out.maxByteLength;
 }
 
 export function setUrlSearchParams(url, params = {}, baseUrl = Constants.STG_BASE_URL) {
@@ -220,17 +278,18 @@ export function formatUrl(url, data = {}) {
     });
 }
 
-const readerUrl = 'about:reader?url=';
+// const readerUrl = 'about:reader?url=';
+const readerProtocol = 'about:reader';
 export function normalizeUrl(url) {
     if (!url || typeof url !== 'string') {
         return '';
-    } else if (url.startsWith('moz-extension')) {
+    }
+
+    if (url.startsWith('moz-extension') || url.startsWith(readerProtocol)) {
         const urlObj = new URL(url);
         const urlStr = urlObj.searchParams.get('url') || urlObj.searchParams.get('u') || urlObj.searchParams.get('go');
 
         return urlStr ? normalizeUrl(urlStr) : url;
-    } else if (url.startsWith(readerUrl)) {
-        return decodeURIComponent(url.slice(readerUrl.length));
     }
 
     return url;
@@ -263,7 +322,7 @@ export function getNextIndex(index, length, textPosition = 'next') {
     } else if ('prev' === textPosition) {
         return 0 === index ? length - 1 : index - 1;
     } else {
-        throw Error(`invalid textPosition: ${textPosition}`);
+        throw new Error(`invalid textPosition: ${textPosition}`);
     }
 }
 
@@ -277,7 +336,7 @@ export function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-export function sortBy(key, numeric, reverse) {
+export function sortBy(key, numeric, reverse = false) {
     return (objA, objB) => {
         return reverse ?
             compareStrings(objB[key], objA[key], numeric) :
@@ -488,6 +547,10 @@ export function onlyUniqueFilterLast(value, index, self) {
 export function assignKeys(toObj, fromObj, keys) {
     keys.forEach(key => toObj[key] = fromObj[key]);
     return toObj;
+}
+
+export function isEqualByKeys(obj1, obj2, keys) {
+    return keys.every(key => obj1?.[key] === obj2?.[key]);
 }
 
 export function extractKeys(obj, keys, useClone = false) {
