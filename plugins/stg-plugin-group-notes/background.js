@@ -70,7 +70,7 @@ Listeners.menus.onClicked.add(async info => {
     } else if (info.menuItemId === 'openOptions') {
         browser.runtime.openOptionsPage();
     } else {
-        throw Error(`unknown menu id: ${info.menuItemId}`);
+        throw new Error(`unknown menu id: ${info.menuItemId}`);
     }
 });
 

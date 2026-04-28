@@ -1389,6 +1389,16 @@
         "message": "Расположение настроек синхронизации",
         "description": "Enable auto backup to the cloud"
     },
+    "syncProgressTitle": {
+        "message": "Синхронизация... $percent$%",
+        "description": "Synchronization browser button title",
+        "placeholders": {
+            "percent": {
+                "content": "$1",
+                "example": "25"
+            }
+        }
+    },
     "githubSecretTitle": {
         "message": "Приватный",
         "description": "Secret"
@@ -1428,6 +1438,16 @@
             "relativeTime": {
                 "content": "$1",
                 "example": "in 28 minutes"
+            }
+        }
+    },
+    "githubContentsTooLarge": {
+        "message": "Синхронизация через GitHub API невозможна из-за слишком большого объема данных: $dataSize$.\nУменьшите количество вкладок или отключите синхронизацию значков вкладок.",
+        "description": "Contents are too large and cannot be saved via GitHub API",
+        "placeholders": {
+            "dataSize": {
+                "content": "$1",
+                "example": "100 MB"
             }
         }
     },

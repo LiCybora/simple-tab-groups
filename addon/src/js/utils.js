@@ -105,34 +105,7 @@ export function isPrimitive(value) {
     return value !== Object(value);
 }
 
-/* function formatBytes(bytes, decimals = 2) {
-    if (0 === bytes) {
-        return '0 Bytes';
-    }
-
-    let k = 1024,
-        sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
-        i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
-} */
-
 export function formatBytes(bytes, decimals = 2, locale = UI_LANG) {
-    // if (bytes === 0) return '0 Bytes';
-    // if (bytes < 0 || !Number.isFinite(bytes)) throw new RangeError('Bytes must be a non-negative finite number');
-
-    // const k = 1024;
-    // const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    // const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    // const formatter = new Intl.NumberFormat(locale, {
-    //     minimumFractionDigits: decimals,
-    //     maximumFractionDigits: decimals,
-    // });
-
-    // const value = bytes / k ** i;
-    // return `${formatter.format(value)} ${sizes[i]}`;
-
     if (bytes < 0 || !Number.isFinite(bytes)) {
         throw new RangeError('Bytes must be a non-negative finite number');
     }
