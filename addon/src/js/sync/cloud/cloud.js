@@ -13,6 +13,7 @@ import GithubGist from './githubgist.js';
 import * as CloudBroadcast from '/js/broadcast.js?channel=cloud';
 import * as SyncStorage from '../sync-storage.js';
 import * as Storage from '/js/storage.js';
+import Migration from '/js/migration.js';
 import backgroundSelf from '/js/background.js';
 // export {
 //     default as GithubGist,
@@ -362,7 +363,7 @@ async function syncData(localData, cloudData, sourceOfTruth, progressFunc = null
 
     progressFunc?.(0);
 
-    const resultMigrate = await backgroundSelf.runMigrateForData(cloudData, false);
+    const resultMigrate = await Migration(cloudData);
 
     progressFunc?.(10);
 

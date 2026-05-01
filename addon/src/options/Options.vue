@@ -28,6 +28,7 @@ import * as Permissions from '/js/permissions.js';
 import * as BrowserSettings from '/js/browser-settings.js';
 import {isValidHotkeyValue, eventToHotkeyValue} from '/js/hotkeys.js';
 import JSON from '/js/json.js';
+import Migration from '/js/migration.js';
 
 import defaultGroupMixin from '/js/mixins/default-group.mixin.js';
 import globalMixin from '/js/mixins/global.mixin.js';
@@ -418,7 +419,7 @@ export default {
                 return;
             }
 
-            const resultMigrate = await sendMessageModule('BG.runMigrateForData', file.data, false);
+            const resultMigrate = await Migration(file.data);
 
             if (resultMigrate.migrated) {
                 file.data = resultMigrate.data;
@@ -658,7 +659,7 @@ export default {
                 let data;
                 const response = await Host.getLastBackup(progress => this.restoreLastBackupProgress = progress);
 
-                const resultMigrate = await sendMessageModule('BG.runMigrateForData', response.data, false);
+                const resultMigrate = await Migration(response.data);
 
                 if (resultMigrate.migrated) {
                     data = resultMigrate.data;

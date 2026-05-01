@@ -1494,3 +1494,89 @@ export function normalizeFavIcon(tab) {
 export function isSame(tab1, tab2, keys = ['url', 'cookieStoreId', 'groupId']) {
     return Utils.isEqualByKeys(tab1, tab2, keys);
 }
+
+export async function restoreOldExtensionUrls(parseUrlFunc = null) {
+    const tabs = await browser.tabs.query({
+        url: Constants.STG_HELP_PAGES.map(page => `moz-extension://*/help/${page}.html*`),
+    });
+
+    await Promise.allSettled(tabs.map(async tab => {
+        const oldUrl = tab.url;
+
+        if (parseUrlFunc) {
+            tab.url = await parseUrlFunc(tab);
+        }
+
+        if (!tab.url.startsWith(Constants.STG_BASE_URL) || oldUrl !== tab.url) {
+            await browser.tabs.update(tab.id, {
+                url: Constants.STG_BASE_URL + tab.url.slice(Constants.STG_BASE_URL.length),
+                loadReplace: true,
+            });
+        }
+    }));
+}
+
+export async function reconcile(groups, allTabs) {
+    const log = logger.start(['info', reconcile], 'groups count:', groups.length, 'allTabs count:', allTabs.length);
+
+    allTabs = allTabs.slice(); // to prevent bugs...
+
+    const containersStorageMap = new Map;
+    const sameTabKeys = ['url', 'cookieStoreId'];
+
+    for (const group of groups) {
+        if (group.isArchive) {
+            continue;
+        }
+
+        log.log('reconcile group', group.id, 'tabs count:', group.tabs.length);
+
+        const newTabParams = Groups.getNewTabParams(group);
+        const groupWindowId = Cache.getWindowId(group.id) || group.tabs[0]?.windowId;
+
+        let tabs = [];
+        let newTabs = [];
+
+        for (const tab of group.tabs) {
+            tab.groupId = group.id;
+            tab.cookieStoreId = await Containers.findExistOrCreateSimilar(tab.cookieStoreId, null, containersStorageMap);
+
+            const winTabIndex = allTabs.findIndex(winTab => isSame(winTab, tab, sameTabKeys));
+
+            if (winTabIndex !== -1) {
+                const [winTab] = allTabs.splice(winTabIndex, 1);
+
+                tabs.push(Cache.setTabSession(winTab, tab));
+            } else {
+                tabs.push(null);
+
+                newTabs.push({
+                    ...tab,
+                    windowId: groupWindowId,
+                    active: null,
+                    index: null,
+                    ...Cache.applySession({}, tab),
+                    ...newTabParams,
+                });
+            }
+        }
+
+        if (newTabs.length) {
+            log.log('new tabs count:', newTabs.length);
+            newTabs = await createMultiple(newTabs, true);
+            tabs = tabs.map(tab => tab ?? newTabs.shift()).filter(Boolean);
+        }
+
+        group.tabs = tabs;
+
+        const firstTabIndex = group.tabs[0]?.index;
+        if (Number.isFinite(firstTabIndex)) {
+            log.log('sorting tabs');
+            group.tabs = await moveNative(group.tabs, {index: firstTabIndex}, true);
+        }
+    }
+
+    log.stop();
+
+    return groups;
+}
